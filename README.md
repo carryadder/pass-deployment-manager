@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 15 foundation for a self-hosted deployment manager.
+Day 16 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -56,7 +56,13 @@ Auth endpoints:
 
 Service endpoint:
 
+- `GET /api/services`
 - `POST /api/services`
+- `POST /api/services/{id}/start`
+- `POST /api/services/{id}/stop`
+- `POST /api/services/{id}/restart`
+- `POST /api/services/{id}/redeploy`
+- `DELETE /api/services/{id}`
 - `POST /api/services/{id}/deploy`
 - `POST /api/services/{id}/rollout`
 - `POST /api/services/{id}/rollback`
@@ -166,7 +172,7 @@ Example:
 ## Frontend
 
 - `frontend/` now contains a Vite + React + TypeScript + Tailwind bootstrap with TanStack Query and Zustand.
-- The checked-in UI includes a login screen, persisted auth session, protected shell layout, and sidebar routes for Projects, Services, Volumes, Networks, and Settings.
+- The checked-in UI now includes a login screen, persisted auth session, protected shell layout, and a service dashboard with search, create, and action controls.
 - A generated-client path is prepared via `npm run generate:api`, and the scaffold already includes a minimal generated-style API layer for auth and inventory endpoints.
 
 ## Traefik

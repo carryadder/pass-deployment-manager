@@ -12,11 +12,19 @@ from backend.app.api.auth import User, get_current_user
 from backend.app.db import session_scope
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.deploy import Deploy
+from backend.app.models.env_var import EnvVar
 from backend.app.models.project import Project
 from backend.app.models.secret import Secret
 from backend.app.models.service import Service
-from backend.app.core.runner import DockerException, run_service
+from backend.app.core.lifecycle import (
+    restart_container,
+    start_container,
+    stop_container,
+    remove_container,
+)
 from backend.app.core.metrics import metrics_sampler, parse_metrics_range
+from backend.app.core.runner import DockerException, run_service
+from backend.app.core.runner import get_service_container_by_slug
 from backend.app.core.service_env import (
     delete_service_env_entry,
     list_service_env_entries,
@@ -171,6 +179,29 @@ class ServiceMetricSample(BaseModel):
     pids: int
 
 
+class ServiceListItem(BaseModel):
+    service_id: UUID
+    name: str
+    slug: str
+    image: str
+    status: str
+    project_id: UUID
+    created_at: str
+    updated_at: str
+    domain: str | None = None
+    ports: list[dict] = Field(default_factory=list)
+    uptime_seconds: float | None = None
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+
+
+class ServiceActionResponse(BaseModel):
+    service_id: UUID
+    status: str
+    container_id: str | None = None
+    action: str
+
+
 def _slugify(name: str) -> str:
     slug = "-".join(name.lower().strip().split())
     return "".join(ch for ch in slug if ch.isalnum() or ch == "-").strip("-") or "service"
@@ -238,6 +269,31 @@ def _queue_env_apply(session, service: Service, current_user: User, source_ref: 
         {"source_ref": source_ref, "deploy_id": str(deploy.id)},
     )
     return deploy
+
+
+def _service_uptime_seconds(service) -> float | None:
+    container = get_service_container_by_slug(service.slug)
+    if container is None:
+        return None
+    started_at = container.attrs.get("State", {}).get("StartedAt")
+    if not started_at or started_at.startswith("0001-01-01"):
+        return None
+    try:
+        normalized = started_at.replace("Z", "+00:00")
+        from datetime import datetime, timezone
+
+        started = datetime.fromisoformat(normalized)
+        return max((datetime.now(timezone.utc) - started).total_seconds(), 0.0)
+    except ValueError:
+        return None
+
+
+def _latest_metrics(service_id: UUID) -> tuple[float | None, float | None]:
+    history = metrics_sampler.get_history(service_id, "5m")
+    if not history:
+        return None, None
+    latest = history[-1]
+    return latest.get("cpu_percent"), latest.get("memory_percent")
 
 
 def _create_service_sync(payload: ServiceCreateRequest, current_user: User) -> ServiceCreateResponse:
@@ -332,6 +388,41 @@ async def create_service(
     return await run_in_threadpool(_create_service_sync, payload, current_user)
 
 
+def _list_services_sync(current_user: User) -> list[ServiceListItem]:
+    with session_scope() as session:
+        statement = select(Service)
+        if not current_user.is_owner:
+            statement = statement.join(Project).where(Project.owner_id == current_user.id)
+
+        services = session.exec(statement.order_by(Service.created_at.desc())).all()
+        items: list[ServiceListItem] = []
+        for service in services:
+            cpu_percent, memory_percent = _latest_metrics(service.id)
+            items.append(
+                ServiceListItem(
+                    service_id=service.id,
+                    name=service.name,
+                    slug=service.slug,
+                    image=service.image,
+                    status=service.status,
+                    project_id=service.project_id,
+                    created_at=service.created_at.isoformat(),
+                    updated_at=service.updated_at.isoformat(),
+                    domain=service.config.get("domain"),
+                    ports=service.config.get("ports", []),
+                    uptime_seconds=_service_uptime_seconds(service),
+                    cpu_percent=cpu_percent,
+                    memory_percent=memory_percent,
+                )
+            )
+        return items
+
+
+@router.get("", response_model=list[ServiceListItem])
+async def list_services(current_user: User = Depends(get_current_user)) -> list[ServiceListItem]:
+    return await run_in_threadpool(_list_services_sync, current_user)
+
+
 def _deploy_service_from_git_sync(
     service_id: UUID, payload: ServiceDeployRequest, current_user: User
 ) -> DeployResponse:
@@ -370,6 +461,98 @@ async def deploy_service_from_git(
     current_user: User = Depends(get_current_user),
 ) -> DeployResponse:
     return await run_in_threadpool(_deploy_service_from_git_sync, service_id, payload, current_user)
+
+
+def _act_on_service_container_sync(service_id: UUID, current_user: User, action: str) -> ServiceActionResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to modify this service")
+
+        container = get_service_container_by_slug(service.slug)
+        if container is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found for service")
+
+        if action == "start":
+            attrs = start_container(container.id)
+            service.status = "running"
+        elif action == "stop":
+            attrs = stop_container(container.id)
+            service.status = "stopped"
+        elif action == "restart":
+            attrs = restart_container(container.id)
+            service.status = "running"
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported service action")
+
+        _record_audit_log(
+            session,
+            current_user,
+            f"service.{action}",
+            service,
+            {"container_id": container.id},
+        )
+        session.add(service)
+        session.commit()
+        return ServiceActionResponse(
+            service_id=service.id,
+            status=service.status,
+            container_id=attrs.get("Id"),
+            action=action,
+        )
+
+
+@router.post("/{service_id}/start", response_model=ServiceActionResponse)
+async def start_service(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> ServiceActionResponse:
+    return await run_in_threadpool(_act_on_service_container_sync, service_id, current_user, "start")
+
+
+@router.post("/{service_id}/stop", response_model=ServiceActionResponse)
+async def stop_service(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> ServiceActionResponse:
+    return await run_in_threadpool(_act_on_service_container_sync, service_id, current_user, "stop")
+
+
+@router.post("/{service_id}/restart", response_model=ServiceActionResponse)
+async def restart_service(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> ServiceActionResponse:
+    return await run_in_threadpool(_act_on_service_container_sync, service_id, current_user, "restart")
+
+
+def _redeploy_service_sync(service_id: UUID, current_user: User) -> RollbackResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to redeploy this service")
+
+        deploy = Deploy(
+            service_id=service.id,
+            status="queued",
+            source_type="redeploy",
+            source_ref=service.image,
+            image_tag=service.image,
+        )
+        service.status = "redeploy_queued"
+        session.add(deploy)
+        session.add(service)
+        session.commit()
+        session.refresh(deploy)
+
+        enqueue_rollout_job(deploy.id, service.id, service.image)
+        return RollbackResponse(deploy_id=deploy.id, status=deploy.status, image_tag=service.image)
+
+
+@router.post("/{service_id}/redeploy", response_model=RollbackResponse, status_code=status.HTTP_202_ACCEPTED)
+async def redeploy_service(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> RollbackResponse:
+    return await run_in_threadpool(_redeploy_service_sync, service_id, current_user)
 
 
 def _rollout_built_service_sync(service_id: UUID, current_user: User) -> DeployResponse:
@@ -429,6 +612,50 @@ async def rollback_service(
     current_user: User = Depends(get_current_user),
 ) -> RollbackResponse:
     return await run_in_threadpool(_rollback_service_sync, service_id, current_user)
+
+
+def _delete_service_sync(service_id: UUID, force: bool, volumes: bool, current_user: User) -> ServiceActionResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to delete this service")
+
+        container = get_service_container_by_slug(service.slug)
+        container_id = container.id if container is not None else None
+        if container is not None:
+            remove_container(container.id, force=force, volumes=volumes)
+
+        for env_var in session.exec(select(EnvVar).where(EnvVar.service_id == service.id)).all():
+            session.delete(env_var)
+        for secret in session.exec(select(Secret).where(Secret.service_id == service.id)).all():
+            session.delete(secret)
+        for deploy in session.exec(select(Deploy).where(Deploy.service_id == service.id)).all():
+            session.delete(deploy)
+
+        _record_audit_log(
+            session,
+            current_user,
+            "service.delete",
+            service,
+            {"container_id": container_id, "force": force, "volumes": volumes},
+        )
+        session.delete(service)
+        session.commit()
+        return ServiceActionResponse(
+            service_id=service_id,
+            status="deleted",
+            container_id=container_id,
+            action="delete",
+        )
+
+
+@router.delete("/{service_id}", response_model=ServiceActionResponse)
+async def delete_service(
+    service_id: UUID,
+    force: bool = True,
+    volumes: bool = False,
+    current_user: User = Depends(get_current_user),
+) -> ServiceActionResponse:
+    return await run_in_threadpool(_delete_service_sync, service_id, force, volumes, current_user)
 
 
 def _list_service_deploys_sync(service_id: UUID, current_user: User) -> list[DeployResponse]:

@@ -30,6 +30,57 @@ export interface ContainerSummary {
   }>;
 }
 
+export interface ServiceSummary {
+  service_id: string;
+  name: string;
+  slug: string;
+  image: string;
+  status: string;
+  project_id: string;
+  created_at: string;
+  updated_at: string;
+  domain?: string | null;
+  ports: Array<{
+    container_port: number;
+    host_port: number | null;
+  }>;
+  uptime_seconds?: number | null;
+  cpu_percent?: number | null;
+  memory_percent?: number | null;
+}
+
+export interface ServiceActionResponse {
+  service_id: string;
+  status: string;
+  container_id?: string | null;
+  action: string;
+}
+
+export interface CreateServiceRequest {
+  name: string;
+  image: string;
+  cpus: number;
+  memory_mb: number;
+  disk_mb?: number | null;
+  env?: Record<string, string>;
+  ports?: Array<{ container_port: number; host_port?: number | null }>;
+  volumes?: Array<{ source: string; target: string; mode?: "ro" | "rw" }>;
+  network?: string | null;
+  domain?: string | null;
+  restart_policy?: string;
+  pids_limit?: number | null;
+}
+
+export interface CreateServiceResponse {
+  service_id: string;
+  deploy_id: string;
+  status: string;
+  container_id: string;
+  container_name?: string | null;
+  image: string;
+  project_id: string;
+}
+
 export interface VolumeSummary {
   name: string;
   driver: string;
@@ -65,4 +116,10 @@ export interface SystemInfoResponse {
   MemTotal?: number;
   OperatingSystem?: string;
   [key: string]: unknown;
+}
+
+export interface RollbackResponse {
+  deploy_id: string;
+  status: string;
+  image_tag: string;
 }

@@ -120,6 +120,47 @@ def test_deploy_service_from_git_queues_build(monkeypatch) -> None:
     assert response.json()["source_ref"] == "https://github.com/example/demo.git"
 
 
+def test_list_services_returns_dashboard_rows(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    service_id = uuid4()
+    monkeypatch.setattr(
+        "backend.app.api.services._list_services_sync",
+        lambda user: [
+            {
+                "service_id": str(service_id),
+                "name": "Demo Service",
+                "slug": "demo-service",
+                "image": "nginx:latest",
+                "status": "running",
+                "project_id": str(uuid4()),
+                "created_at": "2026-05-01T12:00:00+00:00",
+                "updated_at": "2026-05-01T12:05:00+00:00",
+                "domain": "demo.localhost",
+                "ports": [{"container_port": 80, "host_port": 8080}],
+                "uptime_seconds": 120.0,
+                "cpu_percent": 12.5,
+                "memory_percent": 55.0,
+            }
+        ],
+    )
+
+    response = client.get("/api/services")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()[0]["service_id"] == str(service_id)
+    assert response.json()[0]["cpu_percent"] == 12.5
+
+
 def test_rollout_built_service_queues_rollout(monkeypatch) -> None:
     current_user = User(
         id=uuid4(),
@@ -152,6 +193,36 @@ def test_rollout_built_service_queues_rollout(monkeypatch) -> None:
     assert response.json()["image_tag"] == "dmgr/demo-service:abc1234"
 
 
+def test_restart_service_returns_action_response(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    service_id = uuid4()
+    monkeypatch.setattr(
+        "backend.app.api.services._act_on_service_container_sync",
+        lambda service_id, user, action: {
+            "service_id": str(service_id),
+            "status": "running",
+            "container_id": "container-123",
+            "action": action,
+        },
+    )
+
+    response = client.post(f"/api/services/{service_id}/restart")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "restart"
+    assert response.json()["container_id"] == "container-123"
+
+
 def test_rollback_service_queues_previous_image(monkeypatch) -> None:
     current_user = User(
         id=uuid4(),
@@ -177,6 +248,62 @@ def test_rollback_service_queues_previous_image(monkeypatch) -> None:
 
     assert response.status_code == 202
     assert response.json()["image_tag"] == "dmgr/demo-service:old"
+
+
+def test_redeploy_service_queues_current_image(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services._redeploy_service_sync",
+        lambda service_id, user: {
+            "deploy_id": str(uuid4()),
+            "status": "queued",
+            "image_tag": "nginx:latest",
+        },
+    )
+
+    response = client.post(f"/api/services/{uuid4()}/redeploy")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    assert response.json()["image_tag"] == "nginx:latest"
+
+
+def test_delete_service_returns_deleted(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    service_id = uuid4()
+    monkeypatch.setattr(
+        "backend.app.api.services._delete_service_sync",
+        lambda service_id, force, volumes, user: {
+            "service_id": str(service_id),
+            "status": "deleted",
+            "container_id": "container-123",
+            "action": "delete",
+        },
+    )
+
+    response = client.delete(f"/api/services/{service_id}?force=true&volumes=false")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
 
 
 def test_list_service_env_returns_entries(monkeypatch) -> None:

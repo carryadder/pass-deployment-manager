@@ -215,7 +215,7 @@ deployment_manager/
 - API client generated from FastAPI's OpenAPI spec (`openapi-typescript-codegen`).
 - **Deliverable:** log in via the UI.
 
-**Day 16 — Services dashboard**
+**Day 16 — Services dashboard [DONE]**
 - Table: name, status pill, image, CPU%, RAM%, uptime, actions menu (start / stop / restart / redeploy / delete).
 - Status colors driven by container state.
 - Filters & search.
