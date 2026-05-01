@@ -12,6 +12,7 @@ from backend.app.api.system import router as system_router
 from backend.app.config import get_settings
 from backend.app.db import Session, engine
 from backend.app.core.docker_client import ping_docker
+from backend.app.core.health_monitor import health_monitor
 from backend.app.core.metrics import metrics_sampler
 from backend.app.ws.logs import router as logs_ws_router
 from backend.app.ws.metrics import router as metrics_ws_router
@@ -22,6 +23,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     metrics_sampler.start()
+    health_monitor.start()
     try:
         with Session(engine) as session:
             ensure_bootstrap_admin(session)
@@ -30,6 +32,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        health_monitor.stop()
         metrics_sampler.stop()
 
 

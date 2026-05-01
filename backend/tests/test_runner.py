@@ -15,6 +15,14 @@ def test_build_run_config_translates_resource_limits() -> None:
         "restart_policy": "unless-stopped",
         "labels": {"dmgr.service.slug": "demo-service"},
         "pids_limit": 200,
+        "healthcheck": {
+            "type": "http",
+            "value": "http://127.0.0.1:8080/healthz",
+            "interval_seconds": 15,
+            "timeout_seconds": 5,
+            "start_period_seconds": 10,
+            "retries": 4,
+        },
     }
 
     result = build_run_config(payload)
@@ -28,3 +36,8 @@ def test_build_run_config_translates_resource_limits() -> None:
     assert result["environment"] == {"APP_ENV": "production"}
     assert result["restart_policy"] == {"Name": "unless-stopped"}
     assert result["pids_limit"] == 200
+    assert result["healthcheck"]["test"][0] == "CMD-SHELL"
+    assert result["healthcheck"]["interval"] == 15_000_000_000
+    assert result["healthcheck"]["timeout"] == 5_000_000_000
+    assert result["healthcheck"]["start_period"] == 10_000_000_000
+    assert result["healthcheck"]["retries"] == 4

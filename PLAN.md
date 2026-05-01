@@ -196,7 +196,7 @@ deployment_manager/
 - `GET /api/services/{id}/metrics?range=5m` and `WS /api/services/{id}/metrics` for live.
 - **Deliverable:** API returns a time series usable by a chart.
 
-**Day 13 — Health checks & auto-restart**
+**Day 13 — Health checks & auto-restart [DONE]**
 - Add `healthcheck` block to container create call (HTTP / TCP / cmd).
 - Subscribe to Docker events (`client.events()`) — on `health_status: unhealthy` or `die` with non-zero exit, follow restart policy and emit an audit event.
 - **Deliverable:** kill a container's process, watch it come back; intentionally break health, watch it stop after N retries.

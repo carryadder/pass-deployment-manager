@@ -8,6 +8,42 @@ from docker.errors import DockerException, NotFound
 from backend.app.core.docker_client import get_docker_client
 
 
+def _build_healthcheck_config(payload: dict) -> dict | None:
+    healthcheck = payload.get("healthcheck")
+    if not healthcheck:
+        return None
+
+    health_type = healthcheck.get("type")
+    value = healthcheck.get("value")
+    if not health_type or not value:
+        return None
+
+    interval_seconds = int(healthcheck.get("interval_seconds", 10))
+    timeout_seconds = int(healthcheck.get("timeout_seconds", 3))
+    start_period_seconds = int(healthcheck.get("start_period_seconds", 5))
+    retries = int(healthcheck.get("retries", 3))
+
+    if health_type == "http":
+        command = f"wget -qO- {value} >/dev/null 2>&1 || exit 1"
+        test = ["CMD-SHELL", command]
+    elif health_type == "tcp":
+        host, port = str(value).rsplit(":", 1)
+        command = f"nc -z {host} {port} >/dev/null 2>&1 || exit 1"
+        test = ["CMD-SHELL", command]
+    elif health_type == "cmd":
+        test = ["CMD-SHELL", str(value)]
+    else:
+        return None
+
+    return {
+        "test": test,
+        "interval": interval_seconds * 1_000_000_000,
+        "timeout": timeout_seconds * 1_000_000_000,
+        "start_period": start_period_seconds * 1_000_000_000,
+        "retries": retries,
+    }
+
+
 def build_run_config(payload: dict) -> dict:
     ports = {
         str(port["container_port"]): port["host_port"]
@@ -37,6 +73,7 @@ def build_run_config(payload: dict) -> dict:
         "nano_cpus": int(Decimal(str(payload["cpus"])) * Decimal("1000000000")),
         "mem_limit": int(payload["memory_mb"]) * 1024 * 1024,
         "pids_limit": payload.get("pids_limit", 256),
+        "healthcheck": _build_healthcheck_config(payload),
     }
 
     if payload.get("disk_mb") is not None:

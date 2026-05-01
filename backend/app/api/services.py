@@ -41,6 +41,15 @@ class VolumeMapping(BaseModel):
     mode: str = Field(default="rw", pattern="^(ro|rw)$")
 
 
+class HealthcheckConfig(BaseModel):
+    type: str = Field(pattern="^(http|tcp|cmd)$")
+    value: str = Field(min_length=1, max_length=1000)
+    interval_seconds: int = Field(default=10, ge=1, le=300)
+    timeout_seconds: int = Field(default=3, ge=1, le=300)
+    start_period_seconds: int = Field(default=5, ge=0, le=300)
+    retries: int = Field(default=3, ge=1, le=20)
+
+
 class ServiceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     image: str = Field(min_length=1, max_length=500)
@@ -52,6 +61,7 @@ class ServiceCreateRequest(BaseModel):
     volumes: list[VolumeMapping] = Field(default_factory=list)
     network: str | None = Field(default=None, max_length=255)
     domain: str | None = Field(default=None, max_length=255)
+    healthcheck: HealthcheckConfig | None = None
     restart_policy: str = Field(default="unless-stopped", max_length=50)
     pids_limit: int | None = Field(default=256, gt=0)
 

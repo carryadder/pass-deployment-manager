@@ -60,6 +60,14 @@ def test_create_service_persists_service_and_deploy(monkeypatch) -> None:
             "volumes": [{"source": "demo-data", "target": "/data", "mode": "rw"}],
             "network": "demo-network",
             "domain": "demo.localhost",
+            "healthcheck": {
+                "type": "http",
+                "value": "http://127.0.0.1:8080/healthz",
+                "interval_seconds": 15,
+                "timeout_seconds": 5,
+                "start_period_seconds": 10,
+                "retries": 4,
+            },
             "restart_policy": "unless-stopped",
         },
     )

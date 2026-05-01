@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 12 foundation for a self-hosted deployment manager.
+Day 13 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -81,6 +81,7 @@ Copy `.env.example` to `.env` and adjust values if needed.
 
 - `POST /api/services` creates a Docker-backed service from an image with CPU, memory, port, volume, and network settings.
 - Set `domain` in the payload to attach Traefik labels automatically.
+- Optional `healthcheck` supports `http`, `tcp`, or `cmd` checks and is translated into Docker healthcheck config.
 - The first service for a user is attached to an auto-created personal project until project CRUD arrives.
 
 Example:
@@ -94,7 +95,11 @@ Example:
   "ports": [
     {"container_port": 80}
   ],
-  "domain": "hello.localhost"
+  "domain": "hello.localhost",
+  "healthcheck": {
+    "type": "http",
+    "value": "http://127.0.0.1/healthz"
+  }
 }
 ```
 
@@ -121,6 +126,12 @@ Example:
 - The in-process sampler polls Docker stats every `METRICS_SAMPLE_INTERVAL_SECONDS` seconds and keeps `METRICS_MAX_SAMPLES` points per service in memory.
 - `GET /api/services/{id}/metrics?range=5m` returns recent CPU, memory, network, block I/O, and pid samples.
 - `WS /api/services/{id}/metrics?range=5m` sends recent history first, then streams new samples live.
+
+## Health Monitoring
+
+- Service create now accepts a Docker healthcheck definition and passes it through to the container runtime.
+- A background Docker event watcher listens for `health_status: unhealthy` and `die` events for managed services.
+- Non-zero exits and unhealthy events update service state and append audit entries; restartable services also get a recovery attempt.
 
 ## Traefik
 
