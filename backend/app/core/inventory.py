@@ -83,9 +83,43 @@ def list_volumes() -> list[dict]:
             "scope": volume.attrs.get("Scope"),
             "labels": volume.attrs.get("Labels") or {},
             "options": volume.attrs.get("Options") or {},
+            "size_bytes": (volume.attrs.get("UsageData") or {}).get("Size"),
+            "ref_count": (volume.attrs.get("UsageData") or {}).get("RefCount"),
         }
         for volume in volumes
     ]
+
+
+def create_volume(
+    name: str,
+    driver: str = "local",
+    labels: dict[str, str] | None = None,
+    options: dict[str, str] | None = None,
+) -> dict:
+    client = get_docker_client()
+    volume = client.volumes.create(
+        name=name,
+        driver=driver,
+        labels=labels or None,
+        driver_opts=options or None,
+    )
+    return {
+        "name": volume.name,
+        "driver": volume.attrs.get("Driver"),
+        "mountpoint": volume.attrs.get("Mountpoint"),
+        "scope": volume.attrs.get("Scope"),
+        "labels": volume.attrs.get("Labels") or {},
+        "options": volume.attrs.get("Options") or {},
+        "size_bytes": (volume.attrs.get("UsageData") or {}).get("Size"),
+        "ref_count": (volume.attrs.get("UsageData") or {}).get("RefCount"),
+    }
+
+
+def remove_volume(name: str, force: bool = False) -> dict:
+    client = get_docker_client()
+    volume = client.volumes.get(name)
+    volume.remove(force=force)
+    return {"name": name, "deleted": True, "force": force}
 
 
 def list_networks() -> list[dict]:
@@ -100,16 +134,63 @@ def list_networks() -> list[dict]:
             "driver": network.attrs.get("Driver"),
             "scope": network.attrs.get("Scope"),
             "labels": network.attrs.get("Labels") or {},
+            "internal": network.attrs.get("Internal", False),
+            "attachable": network.attrs.get("Attachable", False),
+            "options": network.attrs.get("Options") or {},
+            "containers": len((network.attrs.get("Containers") or {}).keys()),
         }
         for network in networks
     ]
 
 
+def create_network(
+    name: str,
+    driver: str = "bridge",
+    internal: bool = False,
+    attachable: bool = False,
+    labels: dict[str, str] | None = None,
+    options: dict[str, str] | None = None,
+) -> dict:
+    client = get_docker_client()
+    network = client.networks.create(
+        name=name,
+        driver=driver,
+        internal=internal,
+        attachable=attachable,
+        labels=labels or None,
+        options=options or None,
+        check_duplicate=True,
+    )
+    return {
+        "id": network.id,
+        "name": network.name,
+        "short_id": network.short_id,
+        "driver": network.attrs.get("Driver"),
+        "scope": network.attrs.get("Scope"),
+        "labels": network.attrs.get("Labels") or {},
+        "internal": network.attrs.get("Internal", False),
+        "attachable": network.attrs.get("Attachable", False),
+        "options": network.attrs.get("Options") or {},
+        "containers": len((network.attrs.get("Containers") or {}).keys()),
+    }
+
+
+def remove_network(name: str) -> dict:
+    client = get_docker_client()
+    network = client.networks.get(name)
+    network.remove()
+    return {"name": name, "deleted": True}
+
+
 __all__ = [
+    "create_network",
+    "create_volume",
     "NotFound",
     "inspect_container",
     "list_containers",
     "list_images",
     "list_networks",
     "list_volumes",
+    "remove_network",
+    "remove_volume",
 ]

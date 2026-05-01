@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 13 foundation for a self-hosted deployment manager.
+Day 15 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -15,6 +15,14 @@ uv sync
 docker compose up -d postgres traefik
 uv run alembic upgrade head
 uv run uvicorn backend.app.main:app --reload
+```
+
+Frontend quick start:
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 To smoke test the database layer after migrating, open a `uv run python` session and insert a `User` through `Session(engine)`.
@@ -61,6 +69,21 @@ Service endpoint:
 - `GET /api/services/deploys/{deploy_id}/logs`
 - `WS /api/services/{id}/logs?tail=200&follow=true`
 - `WS /api/services/{id}/metrics?range=5m`
+
+Volume and network endpoints:
+
+- `GET /api/volumes`
+- `POST /api/volumes`
+- `DELETE /api/volumes/{name}`
+- `GET /api/networks`
+- `POST /api/networks`
+- `DELETE /api/networks/{name}`
+
+Frontend tooling:
+
+- `npm run dev`
+- `npm run build`
+- `npm run generate:api`
 
 ## Environment
 
@@ -132,6 +155,19 @@ Example:
 - Service create now accepts a Docker healthcheck definition and passes it through to the container runtime.
 - A background Docker event watcher listens for `health_status: unhealthy` and `die` events for managed services.
 - Non-zero exits and unhealthy events update service state and append audit entries; restartable services also get a recovery attempt.
+
+## Volumes And Networks
+
+- Volume list responses now include driver, mountpoint, labels, options, and Docker-reported usage fields when available.
+- Network list responses now include driver, scope, labels, internal/attachable flags, options, and attached container counts.
+- `POST /api/volumes` and `POST /api/networks` create reusable resources for the service form.
+- `DELETE /api/volumes/{name}` and `DELETE /api/networks/{name}` remove those resources when they are no longer needed.
+
+## Frontend
+
+- `frontend/` now contains a Vite + React + TypeScript + Tailwind bootstrap with TanStack Query and Zustand.
+- The checked-in UI includes a login screen, persisted auth session, protected shell layout, and sidebar routes for Projects, Services, Volumes, Networks, and Settings.
+- A generated-client path is prepared via `npm run generate:api`, and the scaffold already includes a minimal generated-style API layer for auth and inventory endpoints.
 
 ## Traefik
 

@@ -201,7 +201,7 @@ deployment_manager/
 - Subscribe to Docker events (`client.events()`) — on `health_status: unhealthy` or `die` with non-zero exit, follow restart policy and emit an audit event.
 - **Deliverable:** kill a container's process, watch it come back; intentionally break health, watch it stop after N retries.
 
-**Day 14 — Volumes & networks UI-ready API**
+**Day 14 — Volumes & networks UI-ready API [DONE]**
 - `POST /api/volumes`, `DELETE /api/volumes/{name}`, list with size.
 - `POST /api/networks`, `DELETE /api/networks/{name}`.
 - Service create/edit accepts named volumes & networks.
@@ -209,7 +209,7 @@ deployment_manager/
 
 ### Week 3 — UI & UX (Days 15–21)
 
-**Day 15 — Frontend bootstrap**
+**Day 15 — Frontend bootstrap [DONE]**
 - `frontend/`: Vite + React + TypeScript + Tailwind + shadcn/ui + TanStack Query + Zustand.
 - Login + protected layout + sidebar (Projects, Services, Volumes, Networks, Settings).
 - API client generated from FastAPI's OpenAPI spec (`openapi-typescript-codegen`).
