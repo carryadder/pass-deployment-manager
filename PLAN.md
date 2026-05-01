@@ -226,7 +226,7 @@ deployment_manager/
 - Overview: status, image, ports, domain link, last deploy, recent events.
 - **Deliverable:** click a row, get a useful detail page.
 
-**Day 18 — Live logs UI**
+**Day 18 — Live logs UI [DONE]**
 - WebSocket consumer with auto-scroll, pause-on-hover, search box, level filter (if JSON logs).
 - Download last N lines as `.log`.
 - **Deliverable:** logs feel as fast and clean as `docker logs -f`.

@@ -9,6 +9,7 @@ import type { DeployResponse, ServiceDetailResponse, ServiceEnvEntry, ServiceMet
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ServiceLogsTab } from "@/features/dashboard/service-logs-tab";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -165,7 +166,7 @@ export function ServiceDetailPage() {
       </Card>
 
       {activeTab === "overview" ? <OverviewTab service={service} latestMetric={latestMetric} /> : null}
-      {activeTab === "logs" ? <LogsTab /> : null}
+      {activeTab === "logs" ? <ServiceLogsTab serviceId={serviceId} /> : null}
       {activeTab === "metrics" ? <MetricsTab samples={metricsQuery.data ?? []} /> : null}
       {activeTab === "env" ? <EnvTab entries={envQuery.data ?? []} isLoading={envQuery.isLoading} /> : null}
       {activeTab === "volumes" ? <VolumesTab service={service} /> : null}
@@ -269,19 +270,6 @@ function OverviewTab({
         </div>
       </Card>
     </div>
-  );
-}
-
-function LogsTab() {
-  return (
-    <Card className="rounded-[32px]">
-      <p className="text-sm uppercase tracking-[0.2em] text-ink/45">Logs</p>
-      <h4 className="mt-3 text-2xl font-semibold">Live log console lands on Day 18</h4>
-      <p className="mt-3 max-w-2xl text-sm text-ink/65">
-        This tab is intentionally in place now so the detail view has the final navigation shape.
-        The next day adds the websocket consumer, tail controls, and searchable log stream.
-      </p>
-    </Card>
   );
 }
 
