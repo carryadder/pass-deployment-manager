@@ -46,6 +46,10 @@ Auth endpoints:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 
+Service endpoint:
+
+- `POST /api/services`
+
 ## Environment
 
 Copy `.env.example` to `.env` and adjust values if needed.
@@ -60,3 +64,8 @@ Copy `.env.example` to `.env` and adjust values if needed.
 
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` can seed the first owner account on startup.
 - `GET /api/auth/me` is protected and should return `401` without a bearer token.
+
+## Service Create
+
+- `POST /api/services` creates a Docker-backed service from an image with CPU, memory, port, volume, and network settings.
+- The first service for a user is attached to an auto-created personal project until project CRUD arrives.

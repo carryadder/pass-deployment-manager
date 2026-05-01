@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.app.api.auth import ensure_bootstrap_admin, router as auth_router
 from backend.app.api.inventory import router as inventory_router
 from backend.app.api.lifecycle import router as lifecycle_router
+from backend.app.api.services import router as services_router
 from backend.app.api.system import router as system_router
 from backend.app.config import get_settings
 from backend.app.db import Session, engine
@@ -32,6 +33,7 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(inventory_router)
 app.include_router(lifecycle_router)
+app.include_router(services_router)
 app.include_router(system_router)
 
 

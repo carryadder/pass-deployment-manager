@@ -150,7 +150,7 @@ deployment_manager/
 - Bootstrap admin via env vars on first run.
 - **Deliverable:** login from curl, protected endpoint rejects without token.
 
-**Day 6 — Run a container with resource limits (the heart of the project)**
+**Day 6 — Run a container with resource limits (the heart of the project) [DONE]**
 - `POST /api/services` body: `{name, image, cpus, memory_mb, disk_mb, env, ports, volumes, network, restart_policy}`.
 - `core/runner.py` translates that to `client.containers.run(...)` with: `nano_cpus`, `mem_limit`, `pids_limit`, `restart_policy`, `labels`, `network`, `volumes`, `environment`.
 - Persist a `Service` row + `Deploy` row tagged `running`.
