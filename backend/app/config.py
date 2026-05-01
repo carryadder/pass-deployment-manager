@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Bootstrap Admin"
+    deploy_workspace: Path = Path(".dmgr-workspace")
 
     model_config = SettingsConfigDict(
         env_file=".env",

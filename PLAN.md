@@ -164,7 +164,7 @@ deployment_manager/
 
 ### Week 2 — Real builds & real metrics (Days 8–14)
 
-**Day 8 — Git → image builder**
+**Day 8 — Git → image builder [DONE]**
 - `POST /api/services/{id}/deploy` body: `{git_url, branch, commit, dockerfile_path, build_args}`.
 - Worker (RQ — simpler than Celery for solo work): clone shallow → `client.images.build(path=…, tag=…)` → stream build logs to Redis pub/sub.
 - live check try to access the git url if can access the url its find and show green border if not then red border with message

@@ -13,6 +13,7 @@ from backend.app.models.deploy import Deploy
 from backend.app.models.project import Project
 from backend.app.models.service import Service
 from backend.app.core.runner import DockerException, run_service
+from backend.app.workers.tasks import enqueue_deploy_job, get_deploy_logs
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -60,6 +61,39 @@ class ServiceCreateResponse(BaseModel):
     project_id: UUID
 
 
+class ServiceDeployRequest(BaseModel):
+    git_url: str = Field(min_length=1, max_length=1000)
+    branch: str | None = Field(default=None, max_length=255)
+    commit: str | None = Field(default=None, max_length=64)
+    dockerfile_path: str | None = Field(default=None, max_length=500)
+    build_args: dict[str, str] = Field(default_factory=dict)
+
+
+class DeployResponse(BaseModel):
+    deploy_id: UUID
+    service_id: UUID
+    status: str
+    source_type: str
+    source_ref: str | None
+    image_tag: str | None
+
+    @classmethod
+    def from_model(cls, deploy: Deploy) -> "DeployResponse":
+        return cls(
+            deploy_id=deploy.id,
+            service_id=deploy.service_id,
+            status=deploy.status,
+            source_type=deploy.source_type,
+            source_ref=deploy.source_ref,
+            image_tag=deploy.image_tag,
+        )
+
+
+class DeployLogsResponse(BaseModel):
+    deploy_id: UUID
+    lines: list[str]
+
+
 def _slugify(name: str) -> str:
     slug = "-".join(name.lower().strip().split())
     return "".join(ch for ch in slug if ch.isalnum() or ch == "-").strip("-") or "service"
@@ -81,6 +115,13 @@ def _ensure_default_project(session: Session, user: User) -> Project:
     session.commit()
     session.refresh(project)
     return project
+
+
+def _get_service_or_404(session: Session, service_id: UUID) -> Service:
+    service = session.get(Service, service_id)
+    if service is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+    return service
 
 
 @router.post("", response_model=ServiceCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -142,3 +183,71 @@ def create_service(
         image=service.image,
         project_id=project.id,
     )
+
+
+@router.post("/{service_id}/deploy", response_model=DeployResponse, status_code=status.HTTP_202_ACCEPTED)
+def deploy_service_from_git(
+    service_id: UUID,
+    payload: ServiceDeployRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> DeployResponse:
+    service = _get_service_or_404(session, service_id)
+    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+
+    deploy = Deploy(
+        service_id=service.id,
+        status="queued",
+        source_type="git",
+        source_ref=payload.git_url,
+    )
+    service.status = "build_queued"
+    session.add(deploy)
+    session.add(service)
+    session.commit()
+    session.refresh(deploy)
+
+    enqueue_deploy_job(
+        deploy_id=deploy.id,
+        service_id=service.id,
+        git_url=payload.git_url,
+        branch=payload.branch,
+        commit=payload.commit,
+        dockerfile_path=payload.dockerfile_path,
+        build_args=payload.build_args,
+    )
+    return DeployResponse.from_model(deploy)
+
+
+@router.get("/{service_id}/deploys", response_model=list[DeployResponse])
+def list_service_deploys(
+    service_id: UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[DeployResponse]:
+    service = _get_service_or_404(session, service_id)
+    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this service")
+
+    deploys = session.exec(
+        select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
+    ).all()
+    return [DeployResponse.from_model(deploy) for deploy in deploys]
+
+
+@router.get("/deploys/{deploy_id}/logs", response_model=DeployLogsResponse)
+def read_deploy_logs(
+    deploy_id: UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> DeployLogsResponse:
+    deploy = session.get(Deploy, deploy_id)
+    if deploy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deploy not found")
+
+    service = _get_service_or_404(session, deploy.service_id)
+    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view deploy logs")
+
+    return DeployLogsResponse(deploy_id=deploy_id, lines=get_deploy_logs(deploy_id))

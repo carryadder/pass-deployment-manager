@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 5 foundation for a self-hosted deployment manager.
+Day 8 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -49,6 +49,9 @@ Auth endpoints:
 Service endpoint:
 
 - `POST /api/services`
+- `POST /api/services/{id}/deploy`
+- `GET /api/services/{id}/deploys`
+- `GET /api/services/deploys/{deploy_id}/logs`
 - `WS /api/services/{id}/logs?tail=200&follow=true`
 
 ## Environment
@@ -70,6 +73,12 @@ Copy `.env.example` to `.env` and adjust values if needed.
 
 - `POST /api/services` creates a Docker-backed service from an image with CPU, memory, port, volume, and network settings.
 - The first service for a user is attached to an auto-created personal project until project CRUD arrives.
+
+## Git Builds
+
+- `POST /api/services/{id}/deploy` queues a background Git clone and Docker image build.
+- Build images are tagged as `dmgr/{service_slug}:{short_ref}`.
+- `GET /api/services/deploys/{deploy_id}/logs` returns the accumulated build log lines for the queued job.
 
 ## Logs
 
