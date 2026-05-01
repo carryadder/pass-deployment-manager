@@ -164,3 +164,138 @@ def test_deploy_service_from_git_queues_build(monkeypatch) -> None:
     assert response.json()["status"] == "queued"
     assert observed["service_id"] == service.id
     assert observed["git_url"] == "https://github.com/example/demo.git"
+
+
+def test_rollout_built_service_queues_rollout(monkeypatch) -> None:
+    fake_session = FakeSession()
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+
+    from backend.app.models.deploy import Deploy
+    from backend.app.models.project import Project
+    from backend.app.models.service import Service
+
+    project = Project(
+        id=uuid4(),
+        name="Owner Project",
+        slug="owner-project",
+        owner_id=current_user.id,
+        description=None,
+    )
+    service = Service(
+        id=uuid4(),
+        name="Demo Service",
+        slug="demo-service",
+        image="nginx:old",
+        status="built",
+        project_id=project.id,
+        config={},
+    )
+    service.project = project
+    deploy = Deploy(
+        service_id=service.id,
+        status="built",
+        source_type="git",
+        source_ref="https://github.com/example/demo.git",
+        image_tag="dmgr/demo-service:abc1234",
+    )
+
+    class DeployQuery:
+        def __init__(self, result):
+            self.result = result
+
+        def first(self):
+            return self.result
+
+    def fake_get(model, object_id):
+        if model.__name__ == "Service":
+            return service
+        return None
+
+    def fake_exec(_statement):
+        return DeployQuery(deploy)
+
+    fake_session.get = fake_get
+    fake_session.exec = fake_exec
+
+    observed: dict = {}
+    app.dependency_overrides[get_session] = lambda: fake_session
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services.enqueue_rollout_job",
+        lambda deploy_id, service_id, image_tag: observed.update(
+            {"deploy_id": deploy_id, "service_id": service_id, "image_tag": image_tag}
+        ),
+    )
+
+    response = client.post(f"/api/services/{service.id}/rollout")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    assert observed["service_id"] == service.id
+    assert observed["image_tag"] == "dmgr/demo-service:abc1234"
+
+
+def test_rollback_service_queues_previous_image(monkeypatch) -> None:
+    fake_session = FakeSession()
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+
+    from backend.app.models.project import Project
+    from backend.app.models.service import Service
+
+    project = Project(
+        id=uuid4(),
+        name="Owner Project",
+        slug="owner-project",
+        owner_id=current_user.id,
+        description=None,
+    )
+    service = Service(
+        id=uuid4(),
+        name="Demo Service",
+        slug="demo-service",
+        image="dmgr/demo-service:new",
+        status="running",
+        project_id=project.id,
+        config={"previous_image": "dmgr/demo-service:old"},
+    )
+    service.project = project
+
+    def fake_get(model, object_id):
+        if model.__name__ == "Service":
+            return service
+        return None
+
+    fake_session.get = fake_get
+
+    observed: dict = {}
+    app.dependency_overrides[get_session] = lambda: fake_session
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services.enqueue_rollout_job",
+        lambda deploy_id, service_id, image_tag: observed.update(
+            {"deploy_id": deploy_id, "service_id": service_id, "image_tag": image_tag}
+        ),
+    )
+
+    response = client.post(f"/api/services/{service.id}/rollback")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    assert observed["service_id"] == service.id
+    assert observed["image_tag"] == "dmgr/demo-service:old"

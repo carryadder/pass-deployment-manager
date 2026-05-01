@@ -14,6 +14,13 @@ from backend.app.core.builder import (
     cleanup_repository,
     clone_repository,
 )
+from backend.app.core.runner import (
+    get_service_container_by_slug,
+    remove_service_container_by_slug,
+    run_service,
+    stop_and_remove_container,
+    wait_for_container_ready,
+)
 from backend.app.models.deploy import Deploy
 from backend.app.models.service import Service
 
@@ -117,3 +124,95 @@ def _run_deploy_job(
     finally:
         if repo_path is not None:
             cleanup_repository(repo_path)
+
+
+def enqueue_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
+    executor.submit(_run_rollout_job, deploy_id, service_id, image_tag)
+
+
+def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
+    with Session(engine) as session:
+        deploy = session.get(Deploy, deploy_id)
+        service = session.get(Service, service_id)
+        if deploy is None or service is None:
+            return
+        deploy.status = "rolling_out"
+        service.status = "rolling_out"
+        session.add(deploy)
+        session.add(service)
+        session.commit()
+        service_slug = service.slug
+        service_name = service.name
+        service_config = dict(service.config)
+        current_image = service.image
+
+    previous_container = get_service_container_by_slug(service_slug)
+    has_host_port_conflict = any(
+        port.get("host_port") is not None for port in service_config.get("ports", [])
+    )
+    if previous_container is not None and has_host_port_conflict:
+        _append_log(deploy_id, "Published ports detected; stopping current container before rollout.")
+        stop_and_remove_container(previous_container)
+        previous_container = None
+
+    candidate_name = f"{service_slug}-candidate-{str(deploy_id)[:8]}"
+    rollout_payload = {
+        **service_config,
+        "name": candidate_name,
+        "image": image_tag,
+        "labels": {
+            "dmgr.service.slug": service_slug,
+        },
+    }
+
+    try:
+        _append_log(deploy_id, f"Starting candidate container from {image_tag}")
+        run_service(rollout_payload)
+        candidate = get_service_container_by_slug(service_slug)
+        if candidate is None:
+            raise DockerException("Candidate container could not be located after startup")
+        wait_for_container_ready(candidate)
+        _append_log(deploy_id, "Candidate container passed readiness checks")
+
+        if previous_container is not None:
+            _append_log(deploy_id, "Stopping previous container")
+            stop_and_remove_container(previous_container)
+
+        try:
+            candidate.rename(service_slug)
+            candidate.reload()
+        except Exception:
+            candidate.reload()
+
+        with Session(engine) as session:
+            deploy = session.get(Deploy, deploy_id)
+            service = session.get(Service, service_id)
+            if deploy is None or service is None:
+                return
+            config = dict(service.config)
+            config["previous_image"] = current_image
+            config["current_container_name"] = candidate.name
+            config["current_container_id"] = candidate.id
+            config["last_successful_deploy_id"] = str(deploy.id)
+            service.config = config
+            service.name = service_name
+            service.image = image_tag
+            service.status = "running"
+            deploy.status = "running"
+            deploy.image_tag = image_tag
+            session.add(service)
+            session.add(deploy)
+            session.commit()
+    except DockerException as exc:
+        _append_log(deploy_id, f"[rollout-error] {exc}")
+        remove_service_container_by_slug(service_slug)
+        with Session(engine) as session:
+            deploy = session.get(Deploy, deploy_id)
+            service = session.get(Service, service_id)
+            if deploy is not None:
+                deploy.status = "failed"
+                session.add(deploy)
+            if service is not None:
+                service.status = "rollout_failed"
+                session.add(service)
+            session.commit()

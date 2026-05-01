@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from decimal import Decimal
 
 from docker.errors import DockerException
@@ -51,4 +52,56 @@ def run_service(payload: dict) -> dict:
     return container.attrs
 
 
-__all__ = ["DockerException", "build_run_config", "run_service"]
+def get_service_container_by_slug(service_slug: str):
+    client = get_docker_client()
+    containers = client.containers.list(
+        all=True,
+        filters={"label": f"dmgr.service.slug={service_slug}"},
+    )
+    return containers[0] if containers else None
+
+
+def remove_service_container_by_slug(service_slug: str) -> None:
+    container = get_service_container_by_slug(service_slug)
+    if container is None:
+        return
+    container.remove(force=True)
+
+
+def wait_for_container_ready(container, timeout_seconds: int = 60) -> dict:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        container.reload()
+        state = container.attrs.get("State", {})
+        health = state.get("Health", {})
+        health_status = health.get("Status")
+
+        if state.get("Status") != "running":
+            raise DockerException(f"Container exited before becoming ready: {state.get('Status')}")
+        if health_status == "healthy":
+            return container.attrs
+        if health_status is None:
+            return container.attrs
+        if health_status == "unhealthy":
+            raise DockerException("Container reported unhealthy status")
+        time.sleep(1)
+
+    raise DockerException("Timed out waiting for container readiness")
+
+
+def stop_and_remove_container(container) -> None:
+    try:
+        container.stop(timeout=10)
+    finally:
+        container.remove(force=True)
+
+
+__all__ = [
+    "DockerException",
+    "build_run_config",
+    "get_service_container_by_slug",
+    "remove_service_container_by_slug",
+    "run_service",
+    "stop_and_remove_container",
+    "wait_for_container_ready",
+]

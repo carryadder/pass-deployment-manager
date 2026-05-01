@@ -171,7 +171,7 @@ deployment_manager/
 - Tag images `dmgr/{service}:{short_sha}`.
 - **Deliverable:** point at a public repo with a Dockerfile, watch it build, get an image.
 
-**Day 9 — Zero-downtime deploy**
+**Day 9 — Zero-downtime deploy [DONE]**
 - After build: start new container on the same network, wait for health check, swap Traefik label, then stop old.
 - Keep the previous image for one rollback.
 - `POST /api/services/{id}/rollback` reverts.

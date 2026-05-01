@@ -50,6 +50,8 @@ Service endpoint:
 
 - `POST /api/services`
 - `POST /api/services/{id}/deploy`
+- `POST /api/services/{id}/rollout`
+- `POST /api/services/{id}/rollback`
 - `GET /api/services/{id}/deploys`
 - `GET /api/services/deploys/{deploy_id}/logs`
 - `WS /api/services/{id}/logs?tail=200&follow=true`
@@ -79,6 +81,12 @@ Copy `.env.example` to `.env` and adjust values if needed.
 - `POST /api/services/{id}/deploy` queues a background Git clone and Docker image build.
 - Build images are tagged as `dmgr/{service_slug}:{short_ref}`.
 - `GET /api/services/deploys/{deploy_id}/logs` returns the accumulated build log lines for the queued job.
+
+## Rollout
+
+- `POST /api/services/{id}/rollout` promotes the latest built image into a running container.
+- If published host ports would conflict, the old container is stopped first; otherwise the candidate starts alongside it and is promoted after readiness passes.
+- `POST /api/services/{id}/rollback` reuses the previously active image when one is available.
 
 ## Logs
 

@@ -13,7 +13,7 @@ from backend.app.models.deploy import Deploy
 from backend.app.models.project import Project
 from backend.app.models.service import Service
 from backend.app.core.runner import DockerException, run_service
-from backend.app.workers.tasks import enqueue_deploy_job, get_deploy_logs
+from backend.app.workers.tasks import enqueue_deploy_job, enqueue_rollout_job, get_deploy_logs
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -94,6 +94,12 @@ class DeployLogsResponse(BaseModel):
     lines: list[str]
 
 
+class RollbackResponse(BaseModel):
+    deploy_id: UUID
+    status: str
+    image_tag: str
+
+
 def _slugify(name: str) -> str:
     slug = "-".join(name.lower().strip().split())
     return "".join(ch for ch in slug if ch.isalnum() or ch == "-").strip("-") or "service"
@@ -154,7 +160,12 @@ def create_service(
         image=payload.image,
         status="running",
         project_id=project.id,
-        config=service_config,
+        config={
+            **service_config,
+            "current_container_name": service_slug,
+            "previous_image": None,
+            "last_successful_deploy_id": None,
+        },
     )
     deploy = Deploy(
         service_id=service.id,
@@ -218,6 +229,59 @@ def deploy_service_from_git(
         build_args=payload.build_args,
     )
     return DeployResponse.from_model(deploy)
+
+
+@router.post("/{service_id}/rollout", response_model=DeployResponse, status_code=status.HTTP_202_ACCEPTED)
+def rollout_built_service(
+    service_id: UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> DeployResponse:
+    service = _get_service_or_404(session, service_id)
+    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+
+    deploy = session.exec(
+        select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
+    ).first()
+    if deploy is None or deploy.image_tag is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No built deploy is available for rollout")
+    if deploy.status not in {"built", "rollout_failed"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Latest deploy is not ready for rollout")
+
+    enqueue_rollout_job(deploy.id, service.id, deploy.image_tag)
+    return DeployResponse.from_model(deploy)
+
+
+@router.post("/{service_id}/rollback", response_model=RollbackResponse, status_code=status.HTTP_202_ACCEPTED)
+def rollback_service(
+    service_id: UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> RollbackResponse:
+    service = _get_service_or_404(session, service_id)
+    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to rollback this service")
+
+    previous_image = service.config.get("previous_image")
+    if not previous_image:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No previous image is available for rollback")
+
+    deploy = Deploy(
+        service_id=service.id,
+        status="queued",
+        source_type="rollback",
+        source_ref=service.image,
+        image_tag=previous_image,
+    )
+    service.status = "rollback_queued"
+    session.add(deploy)
+    session.add(service)
+    session.commit()
+    session.refresh(deploy)
+
+    enqueue_rollout_job(deploy.id, service.id, previous_image)
+    return RollbackResponse(deploy_id=deploy.id, status=deploy.status, image_tag=previous_image)
 
 
 @router.get("/{service_id}/deploys", response_model=list[DeployResponse])
