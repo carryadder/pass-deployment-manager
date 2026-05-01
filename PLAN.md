@@ -177,7 +177,7 @@ deployment_manager/
 - `POST /api/services/{id}/rollback` reverts.
 - **Deliverable:** redeploy a running service without dropping the existing connection (test with `hey -z 30s`).
 
-**Day 10 — Traefik integration**
+**Day 10 — Traefik integration [DONE]**
 - Add Traefik to `docker-compose.yml` with ACME (Let's Encrypt) + Docker provider.
 - `core/traefik.py` generates labels: `traefik.enable=true`, host rule, port, TLS resolver, middlewares.
 - New service flag `domain` → wires the labels automatically.

@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 8 foundation for a self-hosted deployment manager.
+Day 10 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -12,7 +12,7 @@ Day 8 foundation for a self-hosted deployment manager.
 
 ```bash
 uv sync
-docker compose up -d postgres
+docker compose up -d postgres traefik
 uv run alembic upgrade head
 uv run uvicorn backend.app.main:app --reload
 ```
@@ -74,7 +74,23 @@ Copy `.env.example` to `.env` and adjust values if needed.
 ## Service Create
 
 - `POST /api/services` creates a Docker-backed service from an image with CPU, memory, port, volume, and network settings.
+- Set `domain` in the payload to attach Traefik labels automatically.
 - The first service for a user is attached to an auto-created personal project until project CRUD arrives.
+
+Example:
+
+```json
+{
+  "name": "hello",
+  "image": "nginx:latest",
+  "cpus": 0.5,
+  "memory_mb": 256,
+  "ports": [
+    {"container_port": 80}
+  ],
+  "domain": "hello.localhost"
+}
+```
 
 ## Git Builds
 
@@ -87,6 +103,13 @@ Copy `.env.example` to `.env` and adjust values if needed.
 - `POST /api/services/{id}/rollout` promotes the latest built image into a running container.
 - If published host ports would conflict, the old container is stopped first; otherwise the candidate starts alongside it and is promoted after readiness passes.
 - `POST /api/services/{id}/rollback` reuses the previously active image when one is available.
+
+## Traefik
+
+- `docker-compose.yml` now provisions Traefik with the Docker provider and ACME storage.
+- Public services join the `${TRAEFIK_PUBLIC_NETWORK}` bridge automatically so Traefik can reach them.
+- Real domains use HTTPS with the configured ACME resolver.
+- `*.localhost` also gets Traefik routing; Traefik serves its default self-signed certificate on `https://<service>.localhost`.
 
 ## Logs
 

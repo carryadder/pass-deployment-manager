@@ -15,14 +15,17 @@ from backend.app.core.builder import (
     clone_repository,
 )
 from backend.app.core.runner import (
+    get_container_by_name,
     get_service_container_by_slug,
-    remove_service_container_by_slug,
+    remove_service_container_by_name,
     run_service,
     stop_and_remove_container,
     wait_for_container_ready,
 )
 from backend.app.models.deploy import Deploy
+from backend.app.models.project import Project
 from backend.app.models.service import Service
+from backend.app.core.traefik import TraefikConfigError, build_service_routing
 
 executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="deploy-worker")
 deploy_logs: dict[str, list[str]] = {}
@@ -134,6 +137,7 @@ def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
     with Session(engine) as session:
         deploy = session.get(Deploy, deploy_id)
         service = session.get(Service, service_id)
+        project = session.get(Project, service.project_id) if service is not None else None
         if deploy is None or service is None:
             return
         deploy.status = "rolling_out"
@@ -145,6 +149,8 @@ def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
         service_name = service.name
         service_config = dict(service.config)
         current_image = service.image
+        project_id = str(project.id) if project is not None else str(service.project_id)
+        owner_id = str(project.owner_id) if project is not None else None
 
     previous_container = get_service_container_by_slug(service_slug)
     has_host_port_conflict = any(
@@ -156,19 +162,48 @@ def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
         previous_container = None
 
     candidate_name = f"{service_slug}-candidate-{str(deploy_id)[:8]}"
+    base_labels = {
+        "dmgr.service.slug": service_slug,
+        "dmgr.project.id": project_id,
+    }
+    if owner_id is not None:
+        base_labels["dmgr.owner.id"] = owner_id
+
+    try:
+        routing = build_service_routing(
+            service_slug=service_slug,
+            domain=service_config.get("domain"),
+            ports=service_config.get("ports", []),
+            requested_network=service_config.get("network"),
+            base_labels=base_labels,
+        )
+    except TraefikConfigError as exc:
+        _append_log(deploy_id, f"[rollout-error] {exc}")
+        with Session(engine) as session:
+            deploy = session.get(Deploy, deploy_id)
+            service = session.get(Service, service_id)
+            if deploy is not None:
+                deploy.status = "failed"
+                session.add(deploy)
+            if service is not None:
+                service.status = "rollout_failed"
+                session.add(service)
+            session.commit()
+        return
+
     rollout_payload = {
         **service_config,
         "name": candidate_name,
         "image": image_tag,
-        "labels": {
-            "dmgr.service.slug": service_slug,
-        },
+        "labels": routing["labels"],
+        "network": routing["network"],
+        "extra_networks": routing["extra_networks"],
     }
 
     try:
         _append_log(deploy_id, f"Starting candidate container from {image_tag}")
         run_service(rollout_payload)
-        candidate = get_service_container_by_slug(service_slug)
+        candidate = get_container_by_name(candidate_name)
         if candidate is None:
             raise DockerException("Candidate container could not be located after startup")
         wait_for_container_ready(candidate)
@@ -205,7 +240,7 @@ def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
             session.commit()
     except DockerException as exc:
         _append_log(deploy_id, f"[rollout-error] {exc}")
-        remove_service_container_by_slug(service_slug)
+        remove_service_container_by_name(candidate_name)
         with Session(engine) as session:
             deploy = session.get(Deploy, deploy_id)
             service = session.get(Service, service_id)

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Bootstrap Admin"
     deploy_workspace: Path = Path(".dmgr-workspace")
+    traefik_public_network: str = "dmgr-public"
+    traefik_cert_resolver: str = "letsencrypt"
+    traefik_web_entrypoint: str = "web"
+    traefik_websecure_entrypoint: str = "websecure"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,4 +1,28 @@
 services:
+  traefik:
+    image: traefik:v3.1
+    container_name: deployment-manager-traefik
+    command:
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=${TRAEFIK_PUBLIC_NETWORK:-dmgr-public}
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER:-letsencrypt}.acme.email=${TRAEFIK_ACME_EMAIL:-admin@example.com}
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER:-letsencrypt}.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER:-letsencrypt}.acme.httpchallenge=true
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER:-letsencrypt}.acme.httpchallenge.entrypoint=${TRAEFIK_WEB_ENTRYPOINT:-web}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - dmgr-public
+
   postgres:
     image: postgres:16-alpine
     container_name: deployment-manager-postgres
@@ -10,6 +34,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - dmgr-public
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deployment_manager} -d ${POSTGRES_DB:-deployment_manager}"]
       interval: 10s
@@ -18,3 +44,9 @@ services:
 
 volumes:
   postgres_data:
+  traefik_letsencrypt:
+
+networks:
+  dmgr-public:
+    name: ${TRAEFIK_PUBLIC_NETWORK:-dmgr-public}
+    driver: bridge

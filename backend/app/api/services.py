@@ -14,6 +14,7 @@ from backend.app.models.deploy import Deploy
 from backend.app.models.project import Project
 from backend.app.models.service import Service
 from backend.app.core.runner import DockerException, run_service
+from backend.app.core.traefik import TraefikConfigError, build_service_routing
 from backend.app.workers.tasks import enqueue_deploy_job, enqueue_rollout_job, get_deploy_logs
 
 router = APIRouter(prefix="/api/services", tags=["services"])
@@ -40,6 +41,7 @@ class ServiceCreateRequest(BaseModel):
     ports: list[PortMapping] = Field(default_factory=list)
     volumes: list[VolumeMapping] = Field(default_factory=list)
     network: str | None = Field(default=None, max_length=255)
+    domain: str | None = Field(default=None, max_length=255)
     restart_policy: str = Field(default="unless-stopped", max_length=50)
     pids_limit: int | None = Field(default=256, gt=0)
 
@@ -136,14 +138,28 @@ def _create_service_sync(payload: ServiceCreateRequest, current_user: User) -> S
         project = _ensure_default_project(session, current_user)
         service_slug = f"{_slugify(payload.name)}-{str(current_user.id)[:8]}"
         service_config = payload.model_dump()
+        base_labels = {
+            "dmgr.service.slug": service_slug,
+            "dmgr.project.id": str(project.id),
+            "dmgr.owner.id": str(current_user.id),
+        }
+        try:
+            routing = build_service_routing(
+                service_slug=service_slug,
+                domain=payload.domain,
+                ports=service_config.get("ports", []),
+                requested_network=payload.network,
+                base_labels=base_labels,
+            )
+        except TraefikConfigError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
         runner_payload = {
             **service_config,
             "name": service_slug,
-            "labels": {
-                "dmgr.service.slug": service_slug,
-                "dmgr.project.id": str(project.id),
-                "dmgr.owner.id": str(current_user.id),
-            },
+            "labels": routing["labels"],
+            "network": routing["network"],
+            "extra_networks": routing["extra_networks"],
         }
 
         try:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from decimal import Decimal
 
-from docker.errors import DockerException
+from docker.errors import DockerException, NotFound
 
 from backend.app.core.docker_client import get_docker_client
 
@@ -45,9 +45,27 @@ def build_run_config(payload: dict) -> dict:
     return {key: value for key, value in config.items() if value is not None}
 
 
+def ensure_network_exists(name: str):
+    client = get_docker_client()
+    networks = client.networks.list(names=[name])
+    if networks:
+        return networks[0]
+    return client.networks.create(name=name, driver="bridge", check_duplicate=True)
+
+
 def run_service(payload: dict) -> dict:
     client = get_docker_client()
+    primary_network = payload.get("network")
+    extra_networks = [name for name in payload.get("extra_networks", []) if name and name != primary_network]
+
+    if primary_network:
+        ensure_network_exists(primary_network)
+    for network_name in extra_networks:
+        ensure_network_exists(network_name)
+
     container = client.containers.run(**build_run_config(payload))
+    for network_name in extra_networks:
+        client.networks.get(network_name).connect(container)
     container.reload()
     return container.attrs
 
@@ -61,8 +79,23 @@ def get_service_container_by_slug(service_slug: str):
     return containers[0] if containers else None
 
 
+def get_container_by_name(container_name: str):
+    client = get_docker_client()
+    try:
+        return client.containers.get(container_name)
+    except NotFound:
+        return None
+
+
 def remove_service_container_by_slug(service_slug: str) -> None:
     container = get_service_container_by_slug(service_slug)
+    if container is None:
+        return
+    container.remove(force=True)
+
+
+def remove_service_container_by_name(container_name: str) -> None:
+    container = get_container_by_name(container_name)
     if container is None:
         return
     container.remove(force=True)
@@ -99,7 +132,10 @@ def stop_and_remove_container(container) -> None:
 __all__ = [
     "DockerException",
     "build_run_config",
+    "ensure_network_exists",
+    "get_container_by_name",
     "get_service_container_by_slug",
+    "remove_service_container_by_name",
     "remove_service_container_by_slug",
     "run_service",
     "stop_and_remove_container",

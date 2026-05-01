@@ -59,6 +59,7 @@ def test_create_service_persists_service_and_deploy(monkeypatch) -> None:
             "ports": [{"container_port": 80, "host_port": 8080}],
             "volumes": [{"source": "demo-data", "target": "/data", "mode": "rw"}],
             "network": "demo-network",
+            "domain": "demo.localhost",
             "restart_policy": "unless-stopped",
         },
     )
