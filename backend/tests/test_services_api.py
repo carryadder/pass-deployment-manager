@@ -169,3 +169,106 @@ def test_rollback_service_queues_previous_image(monkeypatch) -> None:
 
     assert response.status_code == 202
     assert response.json()["image_tag"] == "dmgr/demo-service:old"
+
+
+def test_list_service_env_returns_entries(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services._list_service_env_sync",
+        lambda service_id, user: [
+            {"key": "APP_ENV", "value": "production", "is_secret": False, "has_value": True},
+            {"key": "API_KEY", "value": None, "is_secret": True, "has_value": True},
+        ],
+    )
+
+    response = client.get(f"/api/services/{uuid4()}/env")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()[0]["key"] == "APP_ENV"
+    assert response.json()[1]["is_secret"] is True
+    assert response.json()[1]["value"] is None
+
+
+def test_create_service_env_returns_apply_status(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services._create_service_env_sync",
+        lambda service_id, payload, user: {
+            "entry": {
+                "key": payload.key,
+                "value": None if payload.is_secret else payload.value,
+                "is_secret": payload.is_secret,
+                "has_value": True,
+            },
+            "applied": payload.apply,
+            "deploy_id": str(uuid4()),
+            "service_status": "env_update_queued",
+        },
+    )
+
+    response = client.post(
+        f"/api/services/{uuid4()}/env",
+        json={
+            "key": "API_KEY",
+            "value": "super-secret",
+            "is_secret": True,
+            "apply": True,
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["entry"]["key"] == "API_KEY"
+    assert response.json()["entry"]["is_secret"] is True
+    assert response.json()["entry"]["value"] is None
+    assert response.json()["applied"] is True
+
+
+def test_delete_service_env_returns_deleted(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services._delete_service_env_sync",
+        lambda service_id, key, apply, user: {
+            "key": key,
+            "deleted": True,
+            "applied": apply,
+            "deploy_id": None,
+            "service_status": "running",
+        },
+    )
+
+    response = client.delete(f"/api/services/{uuid4()}/env/API_KEY?apply=false")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["key"] == "API_KEY"
+    assert response.json()["deleted"] is True
+    assert response.json()["applied"] is False

@@ -22,6 +22,7 @@ from backend.app.core.runner import (
     stop_and_remove_container,
     wait_for_container_ready,
 )
+from backend.app.core.service_env import build_service_environment
 from backend.app.models.deploy import Deploy
 from backend.app.models.project import Project
 from backend.app.models.service import Service
@@ -151,6 +152,7 @@ def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
         current_image = service.image
         project_id = str(project.id) if project is not None else str(service.project_id)
         owner_id = str(project.owner_id) if project is not None else None
+        runtime_env = build_service_environment(session, service)
 
     previous_container = get_service_container_by_slug(service_slug)
     has_host_port_conflict = any(
@@ -195,6 +197,7 @@ def _run_rollout_job(deploy_id: UUID, service_id: UUID, image_tag: str) -> None:
         **service_config,
         "name": candidate_name,
         "image": image_tag,
+        "env": runtime_env,
         "labels": routing["labels"],
         "network": routing["network"],
         "extra_networks": routing["extra_networks"],

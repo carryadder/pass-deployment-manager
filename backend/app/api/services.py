@@ -10,10 +10,19 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.auth import User, get_current_user
 from backend.app.db import session_scope
+from backend.app.models.audit_log import AuditLog
 from backend.app.models.deploy import Deploy
 from backend.app.models.project import Project
+from backend.app.models.secret import Secret
 from backend.app.models.service import Service
 from backend.app.core.runner import DockerException, run_service
+from backend.app.core.service_env import (
+    delete_service_env_entry,
+    list_service_env_entries,
+    persist_service_env,
+    service_env_entry_exists,
+    upsert_service_env_entry,
+)
 from backend.app.core.traefik import TraefikConfigError, build_service_routing
 from backend.app.workers.tasks import enqueue_deploy_job, enqueue_rollout_job, get_deploy_logs
 
@@ -103,6 +112,41 @@ class RollbackResponse(BaseModel):
     image_tag: str
 
 
+class ServiceEnvEntry(BaseModel):
+    key: str
+    value: str | None = None
+    is_secret: bool
+    has_value: bool = True
+
+
+class ServiceEnvUpsertRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=255)
+    value: str = Field(max_length=4000)
+    is_secret: bool = False
+    apply: bool = True
+
+
+class ServiceEnvUpdateRequest(BaseModel):
+    value: str = Field(max_length=4000)
+    is_secret: bool | None = None
+    apply: bool = True
+
+
+class ServiceEnvMutationResponse(BaseModel):
+    entry: ServiceEnvEntry
+    applied: bool
+    deploy_id: UUID | None = None
+    service_status: str
+
+
+class ServiceEnvDeleteResponse(BaseModel):
+    key: str
+    deleted: bool
+    applied: bool
+    deploy_id: UUID | None = None
+    service_status: str
+
+
 def _slugify(name: str) -> str:
     slug = "-".join(name.lower().strip().split())
     return "".join(ch for ch in slug if ch.isalnum() or ch == "-").strip("-") or "service"
@@ -131,6 +175,45 @@ def _get_service_or_404(session, service_id: UUID) -> Service:
     if service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     return service
+
+
+def _ensure_service_access(service: Service, current_user: User, detail: str) -> None:
+    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _record_audit_log(session, actor: User, action: str, service: Service, details: dict) -> None:
+    session.add(
+        AuditLog(
+            actor_id=actor.id,
+            action=action,
+            resource_type="service",
+            resource_id=str(service.id),
+            details=details,
+        )
+    )
+
+
+def _queue_env_apply(session, service: Service, current_user: User, source_ref: str) -> Deploy:
+    deploy = Deploy(
+        service_id=service.id,
+        status="queued",
+        source_type="env_update",
+        source_ref=source_ref,
+        image_tag=service.image,
+    )
+    service.status = "env_update_queued"
+    session.add(deploy)
+    session.add(service)
+    session.flush()
+    _record_audit_log(
+        session,
+        current_user,
+        "service.env.apply",
+        service,
+        {"source_ref": source_ref, "deploy_id": str(deploy.id)},
+    )
+    return deploy
 
 
 def _create_service_sync(payload: ServiceCreateRequest, current_user: User) -> ServiceCreateResponse:
@@ -174,7 +257,7 @@ def _create_service_sync(payload: ServiceCreateRequest, current_user: User) -> S
             status="running",
             project_id=project.id,
             config={
-                **service_config,
+                **{**service_config, "env": {}},
                 "current_container_name": service_slug,
                 "previous_image": None,
                 "last_successful_deploy_id": None,
@@ -190,6 +273,14 @@ def _create_service_sync(payload: ServiceCreateRequest, current_user: User) -> S
 
         session.add(service)
         session.add(deploy)
+        persist_service_env(session, service, payload.env)
+        _record_audit_log(
+            session,
+            current_user,
+            "service.create",
+            service,
+            {"image": payload.image, "domain": payload.domain, "project_id": str(project.id)},
+        )
         try:
             session.commit()
         except IntegrityError as exc:
@@ -222,8 +313,7 @@ def _deploy_service_from_git_sync(
 ) -> DeployResponse:
     with session_scope() as session:
         service = _get_service_or_404(session, service_id)
-        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+        _ensure_service_access(service, current_user, "Not allowed to deploy this service")
 
         deploy = Deploy(
             service_id=service.id,
@@ -261,8 +351,7 @@ async def deploy_service_from_git(
 def _rollout_built_service_sync(service_id: UUID, current_user: User) -> DeployResponse:
     with session_scope() as session:
         service = _get_service_or_404(session, service_id)
-        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+        _ensure_service_access(service, current_user, "Not allowed to deploy this service")
 
         deploy = session.exec(
             select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
@@ -287,8 +376,7 @@ async def rollout_built_service(
 def _rollback_service_sync(service_id: UUID, current_user: User) -> RollbackResponse:
     with session_scope() as session:
         service = _get_service_or_404(session, service_id)
-        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to rollback this service")
+        _ensure_service_access(service, current_user, "Not allowed to rollback this service")
 
         previous_image = service.config.get("previous_image")
         if not previous_image:
@@ -322,8 +410,7 @@ async def rollback_service(
 def _list_service_deploys_sync(service_id: UUID, current_user: User) -> list[DeployResponse]:
     with session_scope() as session:
         service = _get_service_or_404(session, service_id)
-        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this service")
+        _ensure_service_access(service, current_user, "Not allowed to view this service")
 
         deploys = session.exec(
             select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
@@ -346,10 +433,146 @@ def _read_deploy_logs_sync(deploy_id: UUID, current_user: User) -> DeployLogsRes
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deploy not found")
 
         service = _get_service_or_404(session, deploy.service_id)
-        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view deploy logs")
+        _ensure_service_access(service, current_user, "Not allowed to view deploy logs")
 
         return DeployLogsResponse(deploy_id=deploy_id, lines=get_deploy_logs(deploy_id))
+
+
+def _list_service_env_sync(service_id: UUID, current_user: User) -> list[ServiceEnvEntry]:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to view this service")
+        return [ServiceEnvEntry(**entry) for entry in list_service_env_entries(session, service)]
+
+
+def _create_service_env_sync(
+    service_id: UUID, payload: ServiceEnvUpsertRequest, current_user: User
+) -> ServiceEnvMutationResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to update this service")
+
+        entry = upsert_service_env_entry(
+            session,
+            service,
+            payload.key,
+            payload.value,
+            is_secret=payload.is_secret,
+        )
+        _record_audit_log(
+            session,
+            current_user,
+            "service.env.upsert",
+            service,
+            {"key": payload.key, "is_secret": payload.is_secret},
+        )
+
+        deploy: Deploy | None = None
+        if payload.apply:
+            deploy = _queue_env_apply(session, service, current_user, payload.key)
+        deploy_id = deploy.id if deploy is not None else None
+        image_tag = service.image
+        service_status = service.status
+
+        session.commit()
+        if deploy_id is not None:
+            enqueue_rollout_job(deploy_id, service.id, image_tag)
+
+        return ServiceEnvMutationResponse(
+            entry=ServiceEnvEntry(**entry),
+            applied=payload.apply,
+            deploy_id=deploy_id,
+            service_status=service_status,
+        )
+
+
+def _update_service_env_sync(
+    service_id: UUID, key: str, payload: ServiceEnvUpdateRequest, current_user: User
+) -> ServiceEnvMutationResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to update this service")
+
+        if not service_env_entry_exists(session, service, key):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Environment variable not found")
+
+        is_secret = payload.is_secret
+        if is_secret is None:
+            is_secret = session.exec(
+                select(Secret).where(Secret.service_id == service.id, Secret.key == key)
+            ).first() is not None
+
+        entry = upsert_service_env_entry(
+            session,
+            service,
+            key,
+            payload.value,
+            is_secret=is_secret,
+        )
+        _record_audit_log(
+            session,
+            current_user,
+            "service.env.update",
+            service,
+            {"key": key, "is_secret": is_secret},
+        )
+
+        deploy: Deploy | None = None
+        if payload.apply:
+            deploy = _queue_env_apply(session, service, current_user, key)
+        deploy_id = deploy.id if deploy is not None else None
+        image_tag = service.image
+        service_status = service.status
+
+        session.commit()
+        if deploy_id is not None:
+            enqueue_rollout_job(deploy_id, service.id, image_tag)
+
+        return ServiceEnvMutationResponse(
+            entry=ServiceEnvEntry(**entry),
+            applied=payload.apply,
+            deploy_id=deploy_id,
+            service_status=service_status,
+        )
+
+
+def _delete_service_env_sync(
+    service_id: UUID, key: str, apply: bool, current_user: User
+) -> ServiceEnvDeleteResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to update this service")
+
+        deleted = delete_service_env_entry(session, service, key)
+        if not deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Environment variable not found")
+
+        _record_audit_log(
+            session,
+            current_user,
+            "service.env.delete",
+            service,
+            {"key": key},
+        )
+
+        deploy: Deploy | None = None
+        if apply:
+            deploy = _queue_env_apply(session, service, current_user, key)
+        deploy_id = deploy.id if deploy is not None else None
+        image_tag = service.image
+        service_status = service.status
+
+        session.commit()
+        if deploy_id is not None:
+            enqueue_rollout_job(deploy_id, service.id, image_tag)
+
+        return ServiceEnvDeleteResponse(
+            key=key,
+            deleted=True,
+            applied=apply,
+            deploy_id=deploy_id,
+            service_status=service_status,
+        )
 
 
 @router.get("/deploys/{deploy_id}/logs", response_model=DeployLogsResponse)
@@ -358,3 +581,40 @@ async def read_deploy_logs(
     current_user: User = Depends(get_current_user),
 ) -> DeployLogsResponse:
     return await run_in_threadpool(_read_deploy_logs_sync, deploy_id, current_user)
+
+
+@router.get("/{service_id}/env", response_model=list[ServiceEnvEntry])
+async def list_service_env(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> list[ServiceEnvEntry]:
+    return await run_in_threadpool(_list_service_env_sync, service_id, current_user)
+
+
+@router.post("/{service_id}/env", response_model=ServiceEnvMutationResponse, status_code=status.HTTP_201_CREATED)
+async def create_service_env(
+    service_id: UUID,
+    payload: ServiceEnvUpsertRequest,
+    current_user: User = Depends(get_current_user),
+) -> ServiceEnvMutationResponse:
+    return await run_in_threadpool(_create_service_env_sync, service_id, payload, current_user)
+
+
+@router.put("/{service_id}/env/{key}", response_model=ServiceEnvMutationResponse)
+async def update_service_env(
+    service_id: UUID,
+    key: str,
+    payload: ServiceEnvUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> ServiceEnvMutationResponse:
+    return await run_in_threadpool(_update_service_env_sync, service_id, key, payload, current_user)
+
+
+@router.delete("/{service_id}/env/{key}", response_model=ServiceEnvDeleteResponse)
+async def delete_service_env(
+    service_id: UUID,
+    key: str,
+    apply: bool = True,
+    current_user: User = Depends(get_current_user),
+) -> ServiceEnvDeleteResponse:
+    return await run_in_threadpool(_delete_service_env_sync, service_id, key, apply, current_user)

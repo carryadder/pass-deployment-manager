@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 10 foundation for a self-hosted deployment manager.
+Day 11 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -52,6 +52,10 @@ Service endpoint:
 - `POST /api/services/{id}/deploy`
 - `POST /api/services/{id}/rollout`
 - `POST /api/services/{id}/rollback`
+- `GET /api/services/{id}/env`
+- `POST /api/services/{id}/env`
+- `PUT /api/services/{id}/env/{key}`
+- `DELETE /api/services/{id}/env/{key}`
 - `GET /api/services/{id}/deploys`
 - `GET /api/services/deploys/{deploy_id}/logs`
 - `WS /api/services/{id}/logs?tail=200&follow=true`
@@ -103,6 +107,12 @@ Example:
 - `POST /api/services/{id}/rollout` promotes the latest built image into a running container.
 - If published host ports would conflict, the old container is stopped first; otherwise the candidate starts alongside it and is promoted after readiness passes.
 - `POST /api/services/{id}/rollback` reuses the previously active image when one is available.
+
+## Env And Secrets
+
+- `GET /api/services/{id}/env` lists saved env entries; secret values are masked from API responses.
+- `POST`, `PUT`, and `DELETE` on `/api/services/{id}/env...` accept `apply=true` by default and queue a redeploy of the current image so changes reach the running container.
+- Secret values are encrypted at rest with the `FERNET_SECRET_KEY` setting before they are stored in the `secrets` table.
 
 ## Traefik
 

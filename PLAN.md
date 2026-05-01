@@ -184,7 +184,7 @@ deployment_manager/
 - For local dev: use `*.localhost` with self-signed.
 - **Deliverable:** create a service with `domain=hello.example.com`, hit `https://hello.example.com`, get a real cert.
 
-**Day 11 — Env vars & secrets**
+**Day 11 — Env vars & secrets [DONE]**
 - `POST/GET/PUT/DELETE /api/services/{id}/env`.
 - Encrypt secret values with Fernet (key from `.env`).
 - Redeploy service when env changes (or expose `apply` button).
