@@ -8,9 +8,10 @@ from jose import JWTError
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.config import get_settings
-from backend.app.db import get_session
+from backend.app.db import session_scope
 from backend.app.models.user import User
 from backend.app.core.security import (
     create_access_token,
@@ -59,53 +60,62 @@ class UserResponse(BaseModel):
         )
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, session: Session = Depends(get_session)) -> UserResponse:
-    existing_users = session.exec(select(User)).all()
-    if existing_users:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registration is closed until invite support is added.",
-        )
+def _register_user(payload: RegisterRequest) -> UserResponse:
+    with session_scope() as session:
+        existing_users = session.exec(select(User)).all()
+        if existing_users:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Registration is closed until invite support is added.",
+            )
 
-    user = User(
-        email=payload.email.lower(),
-        password_hash=hash_password(payload.password),
-        full_name=payload.full_name,
-        is_owner=True,
-        is_active=True,
-    )
-    session.add(user)
-    try:
-        session.commit()
-    except IntegrityError as exc:
-        session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists") from exc
-    session.refresh(user)
-    return UserResponse.from_model(user)
+        user = User(
+            email=payload.email.lower(),
+            password_hash=hash_password(payload.password),
+            full_name=payload.full_name,
+            is_owner=True,
+            is_active=True,
+        )
+        session.add(user)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists") from exc
+        session.refresh(user)
+        return UserResponse.from_model(user)
+
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest) -> UserResponse:
+    return await run_in_threadpool(_register_user, payload)
+
+
+def _login_user(payload: LoginRequest) -> TokenResponse:
+    with session_scope() as session:
+        user = session.exec(select(User).where(User.email == payload.email.lower())).first()
+        if user is None or not verify_password(payload.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+            )
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+
+        claims = {"email": user.email, "is_owner": user.is_owner}
+        return TokenResponse(
+            access_token=create_access_token(str(user.id), extra_claims=claims),
+            refresh_token=create_refresh_token(str(user.id), extra_claims=claims),
+        )
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, session: Session = Depends(get_session)) -> TokenResponse:
-    user = session.exec(select(User).where(User.email == payload.email.lower())).first()
-    if user is None or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
-
-    claims = {"email": user.email, "is_owner": user.is_owner}
-    return TokenResponse(
-        access_token=create_access_token(str(user.id), extra_claims=claims),
-        refresh_token=create_refresh_token(str(user.id), extra_claims=claims),
-    )
+async def login(payload: LoginRequest) -> TokenResponse:
+    return await run_in_threadpool(_login_user, payload)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    session: Session = Depends(get_session),
+def _get_current_user_from_credentials(
+    credentials: HTTPAuthorizationCredentials | None,
 ) -> User:
     if credentials is None:
         raise HTTPException(
@@ -127,16 +137,23 @@ def get_current_user(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject") from exc
 
-    user = session.get(User, user_uuid)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
-    return user
+    with session_scope() as session:
+        user = session.get(User, user_uuid)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+        return user
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> User:
+    return await run_in_threadpool(_get_current_user_from_credentials, credentials)
 
 
 @router.get("/me", response_model=UserResponse)
-def read_current_user(current_user: User = Depends(get_current_user)) -> UserResponse:
+async def read_current_user(current_user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse.from_model(current_user)
 
 

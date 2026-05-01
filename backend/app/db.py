@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -14,6 +15,12 @@ engine = create_engine(
 
 
 def get_session() -> Iterator[Session]:
+    with Session(engine) as session:
+        yield session
+
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
     with Session(engine) as session:
         yield session
 

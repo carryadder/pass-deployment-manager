@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.auth import ensure_bootstrap_admin, router as auth_router
 from backend.app.api.inventory import router as inventory_router
@@ -40,9 +41,9 @@ app.include_router(logs_ws_router)
 
 
 @app.get("/healthz", tags=["health"])
-def healthcheck() -> dict:
+async def healthcheck() -> dict:
     return {
         "status": "ok",
         "environment": settings.app_env,
-        "docker_available": ping_docker(),
+        "docker_available": await run_in_threadpool(ping_docker),
     }

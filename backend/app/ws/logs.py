@@ -6,11 +6,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, WebSocket
 from jose import JWTError
-from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
 
 from backend.app.api.auth import decode_access_token
-from backend.app.db import engine
+from backend.app.db import session_scope
 from backend.app.models.service import Service
 from backend.app.models.user import User
 from backend.app.core.docker_client import get_docker_client
@@ -36,7 +36,7 @@ def _authenticate_websocket(websocket: WebSocket) -> User:
     except (JWTError, KeyError, ValueError) as exc:
         raise PermissionError("Invalid or expired token") from exc
 
-    with Session(engine) as session:
+    with session_scope() as session:
         user = session.get(User, user_id)
         if user is None or not user.is_active:
             raise PermissionError("User is not authorized for websocket access")
@@ -44,7 +44,7 @@ def _authenticate_websocket(websocket: WebSocket) -> User:
 
 
 def _get_service(service_id: UUID) -> Service | None:
-    with Session(engine) as session:
+    with session_scope() as session:
         return session.get(Service, service_id)
 
 
@@ -58,7 +58,7 @@ def _get_container_for_service(service: Service):
 
 
 async def _send_log_history(websocket: WebSocket, container, tail: int) -> None:
-    history = container.logs(tail=tail)
+    history = await run_in_threadpool(container.logs, tail=tail)
     if isinstance(history, bytes):
         text = history.decode("utf-8", errors="replace")
     else:
@@ -118,17 +118,17 @@ async def _stream_follow_logs(websocket: WebSocket, container, tail: int) -> Non
 @router.websocket("/api/services/{service_id}/logs")
 async def service_logs(websocket: WebSocket, service_id: UUID) -> None:
     try:
-        _authenticate_websocket(websocket)
+        await run_in_threadpool(_authenticate_websocket, websocket)
     except PermissionError as exc:
         await websocket.close(code=4401, reason=str(exc))
         return
 
-    service = _get_service(service_id)
+    service = await run_in_threadpool(_get_service, service_id)
     if service is None:
         await websocket.close(code=4404, reason="Service not found")
         return
 
-    container = _get_container_for_service(service)
+    container = await run_in_threadpool(_get_container_for_service, service)
     if container is None:
         await websocket.close(code=4404, reason="Container not found for service")
         return

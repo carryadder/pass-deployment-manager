@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from docker.errors import DockerException
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.core.inventory import (
     NotFound,
@@ -14,17 +15,17 @@ router = APIRouter(tags=["inventory"])
 
 
 @router.get("/api/containers")
-def get_containers() -> list[dict]:
+async def get_containers() -> list[dict]:
     try:
-        return list_containers()
+        return await run_in_threadpool(list_containers)
     except DockerException as exc:
         raise HTTPException(status_code=503, detail="Docker daemon is unavailable") from exc
 
 
 @router.get("/api/containers/{container_id}")
-def get_container(container_id: str) -> dict:
+async def get_container(container_id: str) -> dict:
     try:
-        return inspect_container(container_id)
+        return await run_in_threadpool(inspect_container, container_id)
     except NotFound as exc:
         raise HTTPException(status_code=404, detail="Container not found") from exc
     except DockerException as exc:
@@ -32,24 +33,24 @@ def get_container(container_id: str) -> dict:
 
 
 @router.get("/api/images")
-def get_images() -> list[dict]:
+async def get_images() -> list[dict]:
     try:
-        return list_images()
+        return await run_in_threadpool(list_images)
     except DockerException as exc:
         raise HTTPException(status_code=503, detail="Docker daemon is unavailable") from exc
 
 
 @router.get("/api/volumes")
-def get_volumes() -> list[dict]:
+async def get_volumes() -> list[dict]:
     try:
-        return list_volumes()
+        return await run_in_threadpool(list_volumes)
     except DockerException as exc:
         raise HTTPException(status_code=503, detail="Docker daemon is unavailable") from exc
 
 
 @router.get("/api/networks")
-def get_networks() -> list[dict]:
+async def get_networks() -> list[dict]:
     try:
-        return list_networks()
+        return await run_in_threadpool(list_networks)
     except DockerException as exc:
         raise HTTPException(status_code=503, detail="Docker daemon is unavailable") from exc

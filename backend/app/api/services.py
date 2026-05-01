@@ -5,10 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import select
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.auth import User, get_current_user
-from backend.app.db import get_session
+from backend.app.db import session_scope
 from backend.app.models.deploy import Deploy
 from backend.app.models.project import Project
 from backend.app.models.service import Service
@@ -105,7 +106,7 @@ def _slugify(name: str) -> str:
     return "".join(ch for ch in slug if ch.isalnum() or ch == "-").strip("-") or "service"
 
 
-def _ensure_default_project(session: Session, user: User) -> Project:
+def _ensure_default_project(session, user: User) -> Project:
     default_slug = f"{_slugify(user.full_name)}-{str(user.id)[:8]}"
     project = session.exec(select(Project).where(Project.owner_id == user.id)).first()
     if project is not None:
@@ -123,195 +124,221 @@ def _ensure_default_project(session: Session, user: User) -> Project:
     return project
 
 
-def _get_service_or_404(session: Session, service_id: UUID) -> Service:
+def _get_service_or_404(session, service_id: UUID) -> Service:
     service = session.get(Service, service_id)
     if service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     return service
 
 
+def _create_service_sync(payload: ServiceCreateRequest, current_user: User) -> ServiceCreateResponse:
+    with session_scope() as session:
+        project = _ensure_default_project(session, current_user)
+        service_slug = f"{_slugify(payload.name)}-{str(current_user.id)[:8]}"
+        service_config = payload.model_dump()
+        runner_payload = {
+            **service_config,
+            "name": service_slug,
+            "labels": {
+                "dmgr.service.slug": service_slug,
+                "dmgr.project.id": str(project.id),
+                "dmgr.owner.id": str(current_user.id),
+            },
+        }
+
+        try:
+            container = run_service(runner_payload)
+        except DockerException as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+        service = Service(
+            name=payload.name,
+            slug=service_slug,
+            image=payload.image,
+            status="running",
+            project_id=project.id,
+            config={
+                **service_config,
+                "current_container_name": service_slug,
+                "previous_image": None,
+                "last_successful_deploy_id": None,
+            },
+        )
+        deploy = Deploy(
+            service_id=service.id,
+            status="running",
+            source_type="image",
+            source_ref=payload.image,
+            image_tag=payload.image,
+        )
+
+        session.add(service)
+        session.add(deploy)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Service slug already exists") from exc
+        session.refresh(service)
+        session.refresh(deploy)
+
+        return ServiceCreateResponse(
+            service_id=service.id,
+            deploy_id=deploy.id,
+            status=service.status,
+            container_id=container.get("Id", ""),
+            container_name=container.get("Name"),
+            image=service.image,
+            project_id=project.id,
+        )
+
+
 @router.post("", response_model=ServiceCreateResponse, status_code=status.HTTP_201_CREATED)
-def create_service(
+async def create_service(
     payload: ServiceCreateRequest,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ServiceCreateResponse:
-    project = _ensure_default_project(session, current_user)
-    service_slug = f"{_slugify(payload.name)}-{str(current_user.id)[:8]}"
-    service_config = payload.model_dump()
-    runner_payload = {
-        **service_config,
-        "name": service_slug,
-        "labels": {
-            "dmgr.service.slug": service_slug,
-            "dmgr.project.id": str(project.id),
-            "dmgr.owner.id": str(current_user.id),
-        },
-    }
+    return await run_in_threadpool(_create_service_sync, payload, current_user)
 
-    try:
-        container = run_service(runner_payload)
-    except DockerException as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
-    service = Service(
-        name=payload.name,
-        slug=service_slug,
-        image=payload.image,
-        status="running",
-        project_id=project.id,
-        config={
-            **service_config,
-            "current_container_name": service_slug,
-            "previous_image": None,
-            "last_successful_deploy_id": None,
-        },
-    )
-    deploy = Deploy(
-        service_id=service.id,
-        status="running",
-        source_type="image",
-        source_ref=payload.image,
-        image_tag=payload.image,
-    )
+def _deploy_service_from_git_sync(
+    service_id: UUID, payload: ServiceDeployRequest, current_user: User
+) -> DeployResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
 
-    session.add(service)
-    session.add(deploy)
-    try:
+        deploy = Deploy(
+            service_id=service.id,
+            status="queued",
+            source_type="git",
+            source_ref=payload.git_url,
+        )
+        service.status = "build_queued"
+        session.add(deploy)
+        session.add(service)
         session.commit()
-    except IntegrityError as exc:
-        session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Service slug already exists") from exc
-    session.refresh(service)
-    session.refresh(deploy)
+        session.refresh(deploy)
 
-    return ServiceCreateResponse(
-        service_id=service.id,
-        deploy_id=deploy.id,
-        status=service.status,
-        container_id=container.get("Id", ""),
-        container_name=container.get("Name"),
-        image=service.image,
-        project_id=project.id,
-    )
+        enqueue_deploy_job(
+            deploy_id=deploy.id,
+            service_id=service.id,
+            git_url=payload.git_url,
+            branch=payload.branch,
+            commit=payload.commit,
+            dockerfile_path=payload.dockerfile_path,
+            build_args=payload.build_args,
+        )
+        return DeployResponse.from_model(deploy)
 
 
 @router.post("/{service_id}/deploy", response_model=DeployResponse, status_code=status.HTTP_202_ACCEPTED)
-def deploy_service_from_git(
+async def deploy_service_from_git(
     service_id: UUID,
     payload: ServiceDeployRequest,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> DeployResponse:
-    service = _get_service_or_404(session, service_id)
-    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+    return await run_in_threadpool(_deploy_service_from_git_sync, service_id, payload, current_user)
 
-    deploy = Deploy(
-        service_id=service.id,
-        status="queued",
-        source_type="git",
-        source_ref=payload.git_url,
-    )
-    service.status = "build_queued"
-    session.add(deploy)
-    session.add(service)
-    session.commit()
-    session.refresh(deploy)
 
-    enqueue_deploy_job(
-        deploy_id=deploy.id,
-        service_id=service.id,
-        git_url=payload.git_url,
-        branch=payload.branch,
-        commit=payload.commit,
-        dockerfile_path=payload.dockerfile_path,
-        build_args=payload.build_args,
-    )
-    return DeployResponse.from_model(deploy)
+def _rollout_built_service_sync(service_id: UUID, current_user: User) -> DeployResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+
+        deploy = session.exec(
+            select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
+        ).first()
+        if deploy is None or deploy.image_tag is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No built deploy is available for rollout")
+        if deploy.status not in {"built", "rollout_failed"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Latest deploy is not ready for rollout")
+
+        enqueue_rollout_job(deploy.id, service.id, deploy.image_tag)
+        return DeployResponse.from_model(deploy)
 
 
 @router.post("/{service_id}/rollout", response_model=DeployResponse, status_code=status.HTTP_202_ACCEPTED)
-def rollout_built_service(
+async def rollout_built_service(
     service_id: UUID,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> DeployResponse:
-    service = _get_service_or_404(session, service_id)
-    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to deploy this service")
+    return await run_in_threadpool(_rollout_built_service_sync, service_id, current_user)
 
-    deploy = session.exec(
-        select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
-    ).first()
-    if deploy is None or deploy.image_tag is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No built deploy is available for rollout")
-    if deploy.status not in {"built", "rollout_failed"}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Latest deploy is not ready for rollout")
 
-    enqueue_rollout_job(deploy.id, service.id, deploy.image_tag)
-    return DeployResponse.from_model(deploy)
+def _rollback_service_sync(service_id: UUID, current_user: User) -> RollbackResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to rollback this service")
+
+        previous_image = service.config.get("previous_image")
+        if not previous_image:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No previous image is available for rollback")
+
+        deploy = Deploy(
+            service_id=service.id,
+            status="queued",
+            source_type="rollback",
+            source_ref=service.image,
+            image_tag=previous_image,
+        )
+        service.status = "rollback_queued"
+        session.add(deploy)
+        session.add(service)
+        session.commit()
+        session.refresh(deploy)
+
+        enqueue_rollout_job(deploy.id, service.id, previous_image)
+        return RollbackResponse(deploy_id=deploy.id, status=deploy.status, image_tag=previous_image)
 
 
 @router.post("/{service_id}/rollback", response_model=RollbackResponse, status_code=status.HTTP_202_ACCEPTED)
-def rollback_service(
+async def rollback_service(
     service_id: UUID,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> RollbackResponse:
-    service = _get_service_or_404(session, service_id)
-    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to rollback this service")
+    return await run_in_threadpool(_rollback_service_sync, service_id, current_user)
 
-    previous_image = service.config.get("previous_image")
-    if not previous_image:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No previous image is available for rollback")
 
-    deploy = Deploy(
-        service_id=service.id,
-        status="queued",
-        source_type="rollback",
-        source_ref=service.image,
-        image_tag=previous_image,
-    )
-    service.status = "rollback_queued"
-    session.add(deploy)
-    session.add(service)
-    session.commit()
-    session.refresh(deploy)
+def _list_service_deploys_sync(service_id: UUID, current_user: User) -> list[DeployResponse]:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this service")
 
-    enqueue_rollout_job(deploy.id, service.id, previous_image)
-    return RollbackResponse(deploy_id=deploy.id, status=deploy.status, image_tag=previous_image)
+        deploys = session.exec(
+            select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
+        ).all()
+        return [DeployResponse.from_model(deploy) for deploy in deploys]
 
 
 @router.get("/{service_id}/deploys", response_model=list[DeployResponse])
-def list_service_deploys(
+async def list_service_deploys(
     service_id: UUID,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[DeployResponse]:
-    service = _get_service_or_404(session, service_id)
-    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this service")
+    return await run_in_threadpool(_list_service_deploys_sync, service_id, current_user)
 
-    deploys = session.exec(
-        select(Deploy).where(Deploy.service_id == service_id).order_by(Deploy.created_at.desc())
-    ).all()
-    return [DeployResponse.from_model(deploy) for deploy in deploys]
+
+def _read_deploy_logs_sync(deploy_id: UUID, current_user: User) -> DeployLogsResponse:
+    with session_scope() as session:
+        deploy = session.get(Deploy, deploy_id)
+        if deploy is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deploy not found")
+
+        service = _get_service_or_404(session, deploy.service_id)
+        if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view deploy logs")
+
+        return DeployLogsResponse(deploy_id=deploy_id, lines=get_deploy_logs(deploy_id))
 
 
 @router.get("/deploys/{deploy_id}/logs", response_model=DeployLogsResponse)
-def read_deploy_logs(
+async def read_deploy_logs(
     deploy_id: UUID,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> DeployLogsResponse:
-    deploy = session.get(Deploy, deploy_id)
-    if deploy is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deploy not found")
-
-    service = _get_service_or_404(session, deploy.service_id)
-    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view deploy logs")
-
-    return DeployLogsResponse(deploy_id=deploy_id, lines=get_deploy_logs(deploy_id))
+    return await run_in_threadpool(_read_deploy_logs_sync, deploy_id, current_user)
