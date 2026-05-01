@@ -11,6 +11,7 @@ from backend.app.api.system import router as system_router
 from backend.app.config import get_settings
 from backend.app.db import Session, engine
 from backend.app.core.docker_client import ping_docker
+from backend.app.ws.logs import router as logs_ws_router
 
 settings = get_settings()
 
@@ -35,6 +36,7 @@ app.include_router(inventory_router)
 app.include_router(lifecycle_router)
 app.include_router(services_router)
 app.include_router(system_router)
+app.include_router(logs_ws_router)
 
 
 @app.get("/healthz", tags=["health"])

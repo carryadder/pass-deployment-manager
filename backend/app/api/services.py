@@ -94,6 +94,7 @@ def create_service(
     service_config = payload.model_dump()
     runner_payload = {
         **service_config,
+        "name": service_slug,
         "labels": {
             "dmgr.service.slug": service_slug,
             "dmgr.project.id": str(project.id),

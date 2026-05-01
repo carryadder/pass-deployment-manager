@@ -156,7 +156,7 @@ deployment_manager/
 - Persist a `Service` row + `Deploy` row tagged `running`.
 - **Deliverable:** create a service from JSON, see the container show up in `docker ps` with the limits applied (`docker inspect` confirms).
 
-**Day 7 — Live logs over WebSocket**
+**Day 7 — Live logs over WebSocket [DONE]**
 - `WS /api/services/{id}/logs?tail=200&follow=true`.
 - Use `container.logs(stream=True, follow=True)` in a thread, push lines into the WS.
 - Handle disconnect, backpressure, ANSI colors passthrough.

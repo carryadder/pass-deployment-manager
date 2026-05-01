@@ -49,6 +49,7 @@ Auth endpoints:
 Service endpoint:
 
 - `POST /api/services`
+- `WS /api/services/{id}/logs?tail=200&follow=true`
 
 ## Environment
 
@@ -69,3 +70,8 @@ Copy `.env.example` to `.env` and adjust values if needed.
 
 - `POST /api/services` creates a Docker-backed service from an image with CPU, memory, port, volume, and network settings.
 - The first service for a user is attached to an auto-created personal project until project CRUD arrives.
+
+## Logs
+
+- The service logs websocket accepts either an `Authorization: Bearer <token>` header or `?token=<jwt>` query parameter.
+- `tail` controls the initial backlog size and `follow=true` keeps streaming new log lines.
