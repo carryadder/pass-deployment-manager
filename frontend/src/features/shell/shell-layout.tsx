@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   Boxes,
+  Container,
   FileCode2,
   FolderKanban,
   LayoutDashboard,
@@ -23,6 +24,7 @@ import { useAuthStore } from "@/stores/auth-store";
 const navigation = [
   { to: "/", label: "Projects", icon: FolderKanban },
   { to: "/services", label: "Services", icon: Boxes },
+  { to: "/containers", label: "Containers", icon: Container },
   { to: "/templates", label: "Templates", icon: Rocket },
   { to: "/compose", label: "Compose", icon: FileCode2 },
   { to: "/volumes", label: "Volumes", icon: Shapes },

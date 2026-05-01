@@ -6,6 +6,7 @@ import { useAuthBootstrap } from "@/features/auth/use-auth-bootstrap";
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { AuditPage } from "@/features/dashboard/audit-page";
 import { ComposeImportPage } from "@/features/dashboard/compose-import-page";
+import { ContainersPage } from "@/features/dashboard/containers-page";
 import { NetworksPage } from "@/features/dashboard/networks-page";
 import { NotFoundPage } from "@/features/dashboard/not-found-page";
 import { OverviewPage } from "@/features/dashboard/overview-page";
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
           { path: "/services/:serviceId", element: <ServiceDetailPage /> },
           { path: "/templates", element: <TemplatesPage /> },
           { path: "/compose", element: <ComposeImportPage /> },
+          { path: "/containers", element: <ContainersPage /> },
           { path: "/volumes", element: <VolumesPage /> },
           { path: "/networks", element: <NetworksPage /> },
           { path: "/system", element: <SystemPage /> },
