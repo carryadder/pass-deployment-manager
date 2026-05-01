@@ -231,7 +231,7 @@ deployment_manager/
 - Download last N lines as `.log`.
 - **Deliverable:** logs feel as fast and clean as `docker logs -f`.
 
-**Day 19 — Metrics charts**
+**Day 19 — Metrics charts [DONE]**
 - Recharts (or uPlot for big ranges): CPU, RAM, network, disk I/O, 4 small sparklines on the table + full charts on detail.
 - Range selector: 5m / 1h / 24h.
 - **Deliverable:** charts update live; refresh doesn't lose state.

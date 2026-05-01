@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ServiceLogsTab } from "@/features/dashboard/service-logs-tab";
+import { ServiceMetricsTab } from "@/features/dashboard/service-metrics-tab";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -167,7 +168,7 @@ export function ServiceDetailPage() {
 
       {activeTab === "overview" ? <OverviewTab service={service} latestMetric={latestMetric} /> : null}
       {activeTab === "logs" ? <ServiceLogsTab serviceId={serviceId} /> : null}
-      {activeTab === "metrics" ? <MetricsTab samples={metricsQuery.data ?? []} /> : null}
+      {activeTab === "metrics" ? <ServiceMetricsTab serviceId={serviceId} /> : null}
       {activeTab === "env" ? <EnvTab entries={envQuery.data ?? []} isLoading={envQuery.isLoading} /> : null}
       {activeTab === "volumes" ? <VolumesTab service={service} /> : null}
       {activeTab === "settings" ? <SettingsTab service={service} /> : null}
@@ -268,48 +269,6 @@ function OverviewTab({
             <p className="text-sm text-ink/55">No recent service events were recorded yet.</p>
           )}
         </div>
-      </Card>
-    </div>
-  );
-}
-
-function MetricsTab({ samples }: { samples: ServiceMetricSample[] }) {
-  const latest = samples.length ? samples[samples.length - 1] : null;
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-      <Card className="rounded-[32px]">
-        <p className="text-sm uppercase tracking-[0.2em] text-ink/45">Metrics snapshot</p>
-        {latest ? (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <InfoRow label="CPU" value={formatPercent(latest.cpu_percent)} />
-            <InfoRow label="Memory" value={formatPercent(latest.memory_percent)} />
-            <InfoRow label="Memory used" value={formatBytes(latest.memory_usage_bytes)} />
-            <InfoRow label="Memory limit" value={formatBytes(latest.memory_limit_bytes)} />
-            <InfoRow label="Network RX" value={formatBytes(latest.network_rx_bytes)} />
-            <InfoRow label="Network TX" value={formatBytes(latest.network_tx_bytes)} />
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-ink/55">No metric samples are available for the last 5 minutes.</p>
-        )}
-      </Card>
-
-      <Card className="rounded-[32px]">
-        <p className="text-sm uppercase tracking-[0.2em] text-ink/45">Recent samples</p>
-        <div className="mt-5 space-y-3">
-          {samples.slice(-8).reverse().map((sample) => (
-            <div key={sample.timestamp} className="rounded-[24px] border border-ink/10 bg-mist/75 p-4 text-sm text-ink/70">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="font-medium">{formatDateTime(sample.timestamp)}</p>
-                <p>{formatPercent(sample.cpu_percent)} CPU - {formatPercent(sample.memory_percent)} RAM</p>
-              </div>
-            </div>
-          ))}
-          {!samples.length ? <p className="text-sm text-ink/55">No samples available yet.</p> : null}
-        </div>
-        <p className="mt-5 text-sm text-ink/55">
-          Full live charts arrive on Day 19. This tab already shows the API-backed metric history for the service.
-        </p>
       </Card>
     </div>
   );

@@ -48,8 +48,8 @@ export function ShellLayout() {
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 18</p>
-                  <h1 className="text-xl font-semibold">Live service console</h1>
+                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 19</p>
+                  <h1 className="text-xl font-semibold">Metrics cockpit</h1>
                 </div>
               </div>
 
@@ -103,7 +103,7 @@ export function ShellLayout() {
               <div>
                 <h2 className="text-3xl font-semibold tracking-tight">{headline}</h2>
                 <p className="text-sm text-ink/65">
-                  Search, operate, inspect, and stream live service output from the same protected operator shell.
+                  Search, operate, inspect, and watch live service metrics from the same protected operator shell.
                 </p>
               </div>
             </div>

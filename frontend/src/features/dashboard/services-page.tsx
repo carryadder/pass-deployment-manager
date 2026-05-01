@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { ServicesService } from "@/api/generated";
-import type { CreateServiceRequest, ServiceSummary } from "@/api/generated";
+import type { CreateServiceRequest, ServiceMetricSample, ServiceSummary } from "@/api/generated";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Sparkline, type SparklineSample } from "@/features/dashboard/service-metrics-shared";
 import { queryClient } from "@/lib/query-client";
 
 const initialForm: CreateServiceRequest = {
@@ -121,6 +122,18 @@ export function ServicesPage() {
     createMutation.error instanceof Error ? createMutation.error.message : "Unable to create service.";
   const actionError =
     actionMutation.error instanceof Error ? actionMutation.error.message : "Unable to perform action.";
+  const sparklineQueries = useQueries({
+    queries: filteredServices.slice(0, 8).map((service) => ({
+      queryKey: ["services", "metrics", "sparkline", service.service_id],
+      queryFn: () => ServicesService.metrics(service.service_id, "5m"),
+      staleTime: 15_000,
+      refetchInterval: 20_000,
+    })),
+  });
+  const sparklineByServiceId = new Map<string, ServiceMetricSample[]>();
+  filteredServices.slice(0, 8).forEach((service, index) => {
+    sparklineByServiceId.set(service.service_id, sparklineQueries[index]?.data ?? []);
+  });
 
   return (
     <div className="grid gap-6">
@@ -130,8 +143,8 @@ export function ServicesPage() {
             <p className="text-sm uppercase tracking-[0.2em] text-ink/45">Services</p>
             <h3 className="mt-2 text-2xl font-semibold">Live deployment inventory</h3>
             <p className="mt-2 max-w-2xl text-sm text-ink/65">
-              Search, create, and operate services from one table. Day 16 is focused on getting
-              real CRUD and runtime actions into the shell, not just rendering backend raw data.
+              Search, create, and operate services from one table, now with quick metric sparklines
+              so you can spot trouble before opening the detail view.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -297,6 +310,7 @@ export function ServicesPage() {
                 <th className="px-4 py-3 font-medium">Image</th>
                 <th className="px-4 py-3 font-medium">CPU%</th>
                 <th className="px-4 py-3 font-medium">RAM%</th>
+                <th className="px-4 py-3 font-medium">Signals</th>
                 <th className="px-4 py-3 font-medium">Uptime</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
@@ -306,13 +320,14 @@ export function ServicesPage() {
                 <ServiceRow
                   key={service.service_id}
                   service={service}
+                  samples={sparklineByServiceId.get(service.service_id) ?? []}
                   busy={busyServiceId === service.service_id && actionMutation.isPending}
                   onAction={(action) => actionMutation.mutate({ serviceId: service.service_id, action })}
                 />
               ))}
               {!servicesQuery.isLoading && !filteredServices.length ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-ink/55">
+                  <td colSpan={8} className="px-4 py-8 text-center text-ink/55">
                     No services match the current search yet.
                   </td>
                 </tr>
@@ -327,13 +342,17 @@ export function ServicesPage() {
 
 function ServiceRow({
   service,
+  samples,
   busy,
   onAction,
 }: {
   service: ServiceSummary;
+  samples: ServiceMetricSample[];
   busy: boolean;
   onAction: (action: "start" | "stop" | "restart" | "redeploy" | "delete") => void;
 }) {
+  const sparklines = buildServiceSparklines(samples);
+
   return (
     <tr>
       <td className="px-4 py-4">
@@ -348,6 +367,14 @@ function ServiceRow({
       <td className="px-4 py-4 text-ink/70">{service.image}</td>
       <td className="px-4 py-4 text-ink/70">{formatPercent(service.cpu_percent)}</td>
       <td className="px-4 py-4 text-ink/70">{formatPercent(service.memory_percent)}</td>
+      <td className="px-4 py-4">
+        <div className="grid w-[220px] grid-cols-2 gap-2">
+          <MiniSparkline label="CPU" samples={sparklines.cpu} tone="text-coral" />
+          <MiniSparkline label="RAM" samples={sparklines.memory} tone="text-cyan" />
+          <MiniSparkline label="Net" samples={sparklines.network} tone="text-moss" />
+          <MiniSparkline label="Disk" samples={sparklines.disk} tone="text-slate" />
+        </div>
+      </td>
       <td className="px-4 py-4 text-ink/70">{formatUptime(service.uptime_seconds)}</td>
       <td className="px-4 py-4">
         <div className="flex flex-wrap gap-2">
@@ -370,5 +397,59 @@ function ServiceRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+function buildServiceSparklines(samples: ServiceMetricSample[]) {
+  const cpu: SparklineSample[] = samples.map((sample) => ({
+    timestamp: sample.timestamp,
+    value: sample.cpu_percent,
+  }));
+  const memory: SparklineSample[] = samples.map((sample) => ({
+    timestamp: sample.timestamp,
+    value: sample.memory_percent,
+  }));
+  const network: SparklineSample[] = samples.map((sample, index) => {
+    if (index === 0) {
+      return { timestamp: sample.timestamp, value: 0 };
+    }
+    const previous = samples[index - 1];
+    const deltaSeconds = Math.max((new Date(sample.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000, 1);
+    return {
+      timestamp: sample.timestamp,
+      value: Math.max(sample.network_rx_bytes - previous.network_rx_bytes, 0) / deltaSeconds,
+    };
+  });
+  const disk: SparklineSample[] = samples.map((sample, index) => {
+    if (index === 0) {
+      return { timestamp: sample.timestamp, value: 0 };
+    }
+    const previous = samples[index - 1];
+    const deltaSeconds = Math.max((new Date(sample.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000, 1);
+    const currentTotal = sample.block_read_bytes + sample.block_write_bytes;
+    const previousTotal = previous.block_read_bytes + previous.block_write_bytes;
+    return {
+      timestamp: sample.timestamp,
+      value: Math.max(currentTotal - previousTotal, 0) / deltaSeconds,
+    };
+  });
+
+  return { cpu, memory, network, disk };
+}
+
+function MiniSparkline({
+  label,
+  samples,
+  tone,
+}: {
+  label: string;
+  samples: SparklineSample[];
+  tone: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-ink/10 bg-mist/70 px-2 py-2">
+      <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-ink/45">{label}</p>
+      <Sparkline samples={samples} strokeClassName={tone} />
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 18 foundation for a self-hosted deployment manager.
+Day 19 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -156,6 +156,7 @@ Example:
 - The in-process sampler polls Docker stats every `METRICS_SAMPLE_INTERVAL_SECONDS` seconds and keeps `METRICS_MAX_SAMPLES` points per service in memory.
 - `GET /api/services/{id}/metrics?range=5m` returns recent CPU, memory, network, block I/O, and pid samples.
 - `WS /api/services/{id}/metrics?range=5m` sends recent history first, then streams new samples live.
+- The Day 19 frontend charts subscribe to that websocket and merge live samples into `5m`, `1h`, and `24h` views without losing the current page state.
 
 ## Health Monitoring
 
@@ -176,6 +177,7 @@ Example:
 - The checked-in UI now includes a login screen, persisted auth session, protected shell layout, and a service dashboard with search, create, and action controls.
 - Service detail pages now live at `/services/{id}` with tabs for Overview, Logs, Metrics, Env, Volumes, Settings, and Deploys.
 - The Logs tab now streams the live websocket feed with search, JSON level filtering, pause-on-hover auto-scroll, and buffered `.log` download.
+- The Metrics tab now renders live SVG charts for CPU, memory, network, and disk throughput, and the services table shows mini sparklines for each service.
 - A generated-client path is prepared via `npm run generate:api`, and the scaffold already includes a minimal generated-style API layer for auth and inventory endpoints.
 
 ## Traefik
