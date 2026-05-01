@@ -8,7 +8,9 @@ from backend.app.api.audit import router as audit_router
 from backend.app.api.auth import ensure_bootstrap_admin, router as auth_router
 from backend.app.api.compose import router as compose_router
 from backend.app.api.inventory import router as inventory_router
+from backend.app.api.invites import router as invites_router
 from backend.app.api.lifecycle import router as lifecycle_router
+from backend.app.api.projects import router as projects_router
 from backend.app.api.services import router as services_router
 from backend.app.api.system import router as system_router
 from backend.app.api.templates import router as templates_router
@@ -49,7 +51,9 @@ app.include_router(audit_router)
 app.include_router(auth_router)
 app.include_router(compose_router)
 app.include_router(inventory_router)
+app.include_router(invites_router)
 app.include_router(lifecycle_router)
+app.include_router(projects_router)
 app.include_router(services_router)
 app.include_router(system_router)
 app.include_router(templates_router)

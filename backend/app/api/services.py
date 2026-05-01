@@ -10,6 +10,11 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.auth import User, get_current_user
 from backend.app.api.webhooks import generate_secret, generate_token
+from backend.app.core.access import (
+    can_modify_project,
+    can_view_project,
+    list_visible_project_ids,
+)
 from backend.app.db import session_scope
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.deploy import Deploy
@@ -284,8 +289,26 @@ def _get_service_or_404(session, service_id: UUID) -> Service:
 
 
 def _ensure_service_access(service: Service, current_user: User, detail: str) -> None:
-    if service.project is not None and service.project.owner_id != current_user.id and not current_user.is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+    """Read-level access check.
+
+    Uses the centralized RBAC helper. The legacy `(service, user, detail)` shape
+    is preserved so existing callers keep working; we open a short-lived session
+    to consult project_members. Routers that already hold a session can call
+    `_ensure_service_access_with_session(...)` directly.
+    """
+    if service.project is None:
+        return
+    with session_scope() as session:
+        if not can_view_project(session, current_user, service.project):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _ensure_service_modify_access(service: Service, current_user: User, detail: str) -> None:
+    if service.project is None:
+        return
+    with session_scope() as session:
+        if not can_modify_project(session, current_user, service.project):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
 def _record_audit_log(session, actor: User, action: str, service: Service, details: dict) -> None:
@@ -443,7 +466,10 @@ def _list_services_sync(current_user: User) -> list[ServiceListItem]:
     with session_scope() as session:
         statement = select(Service)
         if not current_user.is_owner:
-            statement = statement.join(Project).where(Project.owner_id == current_user.id)
+            visible_ids = list_visible_project_ids(session, current_user)
+            if not visible_ids:
+                return []
+            statement = statement.where(Service.project_id.in_(visible_ids))
 
         services = session.exec(statement.order_by(Service.created_at.desc())).all()
         items: list[ServiceListItem] = []

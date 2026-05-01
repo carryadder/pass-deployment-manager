@@ -9,6 +9,7 @@ from sqlmodel import select
 from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.auth import User, get_current_user
+from backend.app.core.access import list_visible_project_ids
 from backend.app.db import session_scope
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.user import User as UserModel
@@ -50,8 +51,32 @@ def _list_audit_sync(
         statement = select(AuditLog)
 
         if not current_user.is_owner:
-            # non-owners only see actions they performed
-            statement = statement.where(AuditLog.actor_id == current_user.id)
+            # Non-owners see (a) actions they performed and (b) actions on
+            # services / projects they have visibility into.
+            visible_project_ids = {str(pid) for pid in list_visible_project_ids(session, current_user)}
+            visible_service_ids: set[str] = set()
+            from backend.app.models.service import Service as _Service
+
+            if visible_project_ids:
+                services = session.exec(
+                    select(_Service).where(_Service.project_id.in_(list(visible_project_ids)))
+                ).all()
+                visible_service_ids = {str(svc.id) for svc in services}
+
+            from sqlalchemy import or_
+
+            visibility_clauses = [AuditLog.actor_id == current_user.id]
+            if visible_project_ids:
+                visibility_clauses.append(
+                    (AuditLog.resource_type == "project")
+                    & (AuditLog.resource_id.in_(list(visible_project_ids)))
+                )
+            if visible_service_ids:
+                visibility_clauses.append(
+                    (AuditLog.resource_type == "service")
+                    & (AuditLog.resource_id.in_(list(visible_service_ids)))
+                )
+            statement = statement.where(or_(*visibility_clauses))
         if actor_id is not None:
             statement = statement.where(AuditLog.actor_id == actor_id)
         if resource_type:

@@ -3,6 +3,7 @@ import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { LoginPage } from "@/features/auth/login-page";
 import { useAuthBootstrap } from "@/features/auth/use-auth-bootstrap";
+import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { AuditPage } from "@/features/dashboard/audit-page";
 import { ComposeImportPage } from "@/features/dashboard/compose-import-page";
 import { NetworksPage } from "@/features/dashboard/networks-page";
@@ -12,6 +13,7 @@ import { ServiceDetailPage } from "@/features/dashboard/service-detail-page";
 import { ServicesPage } from "@/features/dashboard/services-page";
 import { SettingsPage } from "@/features/dashboard/settings-page";
 import { SystemPage } from "@/features/dashboard/system-page";
+import { TeamPage } from "@/features/dashboard/team-page";
 import { TemplatesPage } from "@/features/dashboard/templates-page";
 import { VolumesPage } from "@/features/dashboard/volumes-page";
 import { RequireAuth } from "@/features/shell/require-auth";
@@ -21,6 +23,10 @@ const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  {
+    path: "/accept-invite/:token",
+    element: <AcceptInvitePage />,
   },
   {
     element: <RequireAuth />,
@@ -38,6 +44,7 @@ const router = createBrowserRouter([
           { path: "/system", element: <SystemPage /> },
           { path: "/audit", element: <AuditPage /> },
           { path: "/settings", element: <SettingsPage /> },
+          { path: "/team", element: <TeamPage /> },
         ],
       },
     ],

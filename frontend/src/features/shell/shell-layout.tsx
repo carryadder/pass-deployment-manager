@@ -12,6 +12,7 @@ import {
   Server,
   Settings,
   Shapes,
+  Users,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const navigation = [
   { to: "/networks", label: "Networks", icon: Network },
   { to: "/system", label: "System", icon: Server },
   { to: "/audit", label: "Audit log", icon: ScrollText },
+  { to: "/team", label: "Team", icon: Users },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

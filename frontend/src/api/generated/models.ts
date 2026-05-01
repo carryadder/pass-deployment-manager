@@ -388,6 +388,83 @@ export interface ComposeImportResponse {
   document_warnings: string[];
 }
 
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  owner_id: string;
+  owner_email: string | null;
+  role: "admin" | "member" | "viewer";
+  created_at: string;
+  service_count: number;
+  member_count: number;
+}
+
+export interface ProjectCreateRequest {
+  name: string;
+  description?: string | null;
+}
+
+export interface ProjectMemberEntry {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: "admin" | "member" | "viewer";
+  is_owner: boolean;
+  joined_at: string | null;
+}
+
+export interface ProjectMemberAddRequest {
+  user_id: string;
+  role: "admin" | "member" | "viewer";
+}
+
+export interface ProjectMemberUpdateRequest {
+  role: "admin" | "member" | "viewer";
+}
+
+export interface InviteSummary {
+  id: string;
+  email: string;
+  project_id: string;
+  project_name: string;
+  role: "admin" | "member" | "viewer";
+  full_name_hint: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  accept_url: string;
+  token: string;
+  created_at: string;
+}
+
+export interface InviteCreateRequest {
+  email: string;
+  project_id: string;
+  role: "admin" | "member" | "viewer";
+  full_name_hint?: string | null;
+  expires_in_hours?: number;
+}
+
+export interface InviteAcceptRequest {
+  token: string;
+  password: string;
+  full_name: string;
+}
+
+export interface InvitePreviewResponse {
+  email: string;
+  project_id: string;
+  project_name: string;
+  role: "admin" | "member" | "viewer";
+  full_name_hint: string | null;
+  invited_by_name: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+}
+
 export interface ServiceEnvUpsertRequest {
   key: string;
   value: string;

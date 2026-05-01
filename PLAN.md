@@ -263,7 +263,7 @@ deployment_manager/
 - Honor `deploy.resources.limits.cpus / memory`.
 - **Deliverable:** paste a compose file, get a running stack.
 
-**Day 25 — RBAC + invites**
+**Day 25 — RBAC + invites [DONE]**
 - Roles: owner / admin / member / viewer; per-project ACL.
 - Invite by email link (token-based; SMTP config optional, otherwise show the link).
 - **Deliverable:** invite a teammate, they can deploy in their project but not yours.
