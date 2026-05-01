@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   Boxes,
+  FileCode2,
   FolderKanban,
   LayoutDashboard,
   LogOut,
@@ -22,6 +23,7 @@ const navigation = [
   { to: "/", label: "Projects", icon: FolderKanban },
   { to: "/services", label: "Services", icon: Boxes },
   { to: "/templates", label: "Templates", icon: Rocket },
+  { to: "/compose", label: "Compose", icon: FileCode2 },
   { to: "/volumes", label: "Volumes", icon: Shapes },
   { to: "/networks", label: "Networks", icon: Network },
   { to: "/system", label: "System", icon: Server },
@@ -54,8 +56,8 @@ export function ShellLayout() {
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 23</p>
-                  <h1 className="text-xl font-semibold">One-click console</h1>
+                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 24</p>
+                  <h1 className="text-xl font-semibold">Compose console</h1>
                 </div>
               </div>
 

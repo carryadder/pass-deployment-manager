@@ -258,7 +258,7 @@ deployment_manager/
 - Template = pre-filled service form (image, env defaults, volumes, healthcheck).
 - **Deliverable:** "Add Postgres" → 2 clicks → running with persistent volume + auto-generated password (stored as secret).
 
-**Day 24 — `docker-compose.yml` import**
+**Day 24 — `docker-compose.yml` import [DONE]**
 - Parse compose, create one Service per top-level service, wire networks + volumes, deploy as a unit.
 - Honor `deploy.resources.limits.cpus / memory`.
 - **Deliverable:** paste a compose file, get a running stack.

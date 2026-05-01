@@ -6,6 +6,7 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.audit import router as audit_router
 from backend.app.api.auth import ensure_bootstrap_admin, router as auth_router
+from backend.app.api.compose import router as compose_router
 from backend.app.api.inventory import router as inventory_router
 from backend.app.api.lifecycle import router as lifecycle_router
 from backend.app.api.services import router as services_router
@@ -46,6 +47,7 @@ app = FastAPI(
 )
 app.include_router(audit_router)
 app.include_router(auth_router)
+app.include_router(compose_router)
 app.include_router(inventory_router)
 app.include_router(lifecycle_router)
 app.include_router(services_router)

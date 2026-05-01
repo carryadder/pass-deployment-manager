@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { LoginPage } from "@/features/auth/login-page";
 import { useAuthBootstrap } from "@/features/auth/use-auth-bootstrap";
 import { AuditPage } from "@/features/dashboard/audit-page";
+import { ComposeImportPage } from "@/features/dashboard/compose-import-page";
 import { NetworksPage } from "@/features/dashboard/networks-page";
 import { NotFoundPage } from "@/features/dashboard/not-found-page";
 import { OverviewPage } from "@/features/dashboard/overview-page";
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
           { path: "/services", element: <ServicesPage /> },
           { path: "/services/:serviceId", element: <ServiceDetailPage /> },
           { path: "/templates", element: <TemplatesPage /> },
+          { path: "/compose", element: <ComposeImportPage /> },
           { path: "/volumes", element: <VolumesPage /> },
           { path: "/networks", element: <NetworksPage /> },
           { path: "/system", element: <SystemPage /> },

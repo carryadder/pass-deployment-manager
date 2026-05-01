@@ -336,6 +336,58 @@ export interface TemplateDeployResponse {
   auto_generated_keys: string[];
 }
 
+export interface ComposePreviewRequest {
+  yaml: string;
+  name_prefix?: string;
+}
+
+export interface ComposePreviewService {
+  name: string;
+  image: string;
+  cpus: number;
+  memory_mb: number;
+  env_keys: string[];
+  port_count: number;
+  volume_count: number;
+  network: string | null;
+  restart_policy: string;
+  healthcheck: boolean;
+  warnings: string[];
+}
+
+export interface ComposePreviewResponse {
+  services: ComposePreviewService[];
+  declared_volumes: string[];
+  declared_networks: string[];
+  document_warnings: string[];
+}
+
+export interface ComposeImportRequest {
+  yaml: string;
+  name_prefix?: string;
+  only?: string[];
+}
+
+export interface ComposeImportedService {
+  compose_name: string;
+  service_name: string;
+  service_id: string;
+  deploy_id: string;
+  image: string;
+  status: string;
+}
+
+export interface ComposeImportSkipped {
+  compose_name: string;
+  reason: string;
+}
+
+export interface ComposeImportResponse {
+  imported: ComposeImportedService[];
+  skipped: ComposeImportSkipped[];
+  document_warnings: string[];
+}
+
 export interface ServiceEnvUpsertRequest {
   key: string;
   value: string;
