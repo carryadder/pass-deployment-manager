@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 4 foundation for a self-hosted deployment manager.
+Day 5 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -40,6 +40,12 @@ Lifecycle actions:
 - `DELETE /api/images/{id}?force=true`
 - `POST /api/system/prune`
 
+Auth endpoints:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+
 ## Environment
 
 Copy `.env.example` to `.env` and adjust values if needed.
@@ -49,3 +55,8 @@ Copy `.env.example` to `.env` and adjust values if needed.
 - `docker-compose.yml` provisions PostgreSQL for local development.
 - `alembic.ini` and `backend/alembic/` contain the Day 4 migration baseline.
 - Models live under `backend/app/models/`.
+
+## Auth
+
+- `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` can seed the first owner account on startup.
+- `GET /api/auth/me` is protected and should return `401` without a bearer token.

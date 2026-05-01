@@ -143,7 +143,7 @@ deployment_manager/
 - Alembic init + first migration.
 - **Deliverable:** `alembic upgrade head` builds the schema; smoke test by inserting a user.
 
-**Day 5 — Auth**
+**Day 5 — Auth [DONE]**
 - `/api/auth/register` (first user becomes owner; subsequent require invite).
 - `/api/auth/login` → JWT access + refresh.
 - FastAPI `Depends(current_user)` on protected routes.

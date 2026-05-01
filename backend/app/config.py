@@ -12,6 +12,14 @@ class Settings(BaseSettings):
         "postgresql+psycopg://deployment_manager:deployment_manager@localhost:5432/"
         "deployment_manager"
     )
+    jwt_secret_key: str = "change-me"
+    jwt_refresh_secret_key: str = "change-me-too"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_minutes: int = 60 * 24 * 7
+    bootstrap_admin_email: str | None = None
+    bootstrap_admin_password: str | None = None
+    bootstrap_admin_full_name: str = "Bootstrap Admin"
 
     model_config = SettingsConfigDict(
         env_file=".env",
