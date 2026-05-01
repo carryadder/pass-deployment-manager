@@ -10,6 +10,7 @@ from backend.app.api.inventory import router as inventory_router
 from backend.app.api.lifecycle import router as lifecycle_router
 from backend.app.api.services import router as services_router
 from backend.app.api.system import router as system_router
+from backend.app.api.templates import router as templates_router
 from backend.app.api.webhooks import router as webhooks_router
 from backend.app.config import get_settings
 from backend.app.db import Session, engine
@@ -49,6 +50,7 @@ app.include_router(inventory_router)
 app.include_router(lifecycle_router)
 app.include_router(services_router)
 app.include_router(system_router)
+app.include_router(templates_router)
 app.include_router(webhooks_router)
 app.include_router(logs_ws_router)
 app.include_router(metrics_ws_router)

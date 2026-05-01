@@ -295,6 +295,47 @@ export interface WebhookConfigResponse {
   last_event_at: string | null;
 }
 
+export interface TemplateEnvField {
+  key: string;
+  value: string | null;
+  auto_secret: boolean;
+  description: string | null;
+}
+
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  image: string;
+  default_resources: { cpus: number; memory_mb: number };
+  ports: Array<{ container_port: number; host_port?: number | null }>;
+  volumes: Array<{ source: string; target: string; mode?: "ro" | "rw" }>;
+  env: TemplateEnvField[];
+  healthcheck: Record<string, unknown> | null;
+  restart_policy: string;
+  pids_limit: number | null;
+}
+
+export interface TemplateDeployRequest {
+  name: string;
+  cpus?: number | null;
+  memory_mb?: number | null;
+  domain?: string | null;
+  network?: string | null;
+  env_overrides?: Record<string, string>;
+}
+
+export interface TemplateDeployResponse {
+  template_id: string;
+  service_id: string;
+  deploy_id: string;
+  status: string;
+  image: string;
+  auto_generated_keys: string[];
+}
+
 export interface ServiceEnvUpsertRequest {
   key: string;
   value: string;

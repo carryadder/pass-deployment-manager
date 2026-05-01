@@ -11,6 +11,7 @@ import { ServiceDetailPage } from "@/features/dashboard/service-detail-page";
 import { ServicesPage } from "@/features/dashboard/services-page";
 import { SettingsPage } from "@/features/dashboard/settings-page";
 import { SystemPage } from "@/features/dashboard/system-page";
+import { TemplatesPage } from "@/features/dashboard/templates-page";
 import { VolumesPage } from "@/features/dashboard/volumes-page";
 import { RequireAuth } from "@/features/shell/require-auth";
 import { ShellLayout } from "@/features/shell/shell-layout";
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
           { path: "/", element: <OverviewPage /> },
           { path: "/services", element: <ServicesPage /> },
           { path: "/services/:serviceId", element: <ServiceDetailPage /> },
+          { path: "/templates", element: <TemplatesPage /> },
           { path: "/volumes", element: <VolumesPage /> },
           { path: "/networks", element: <NetworksPage /> },
           { path: "/system", element: <SystemPage /> },

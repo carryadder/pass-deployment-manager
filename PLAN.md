@@ -248,12 +248,12 @@ deployment_manager/
 
 ### Week 4 — Productize (Days 22–30)
 
-**Day 22 — Webhooks (auto-deploy on push)**
+**Day 22 — Webhooks (auto-deploy on push)[DONE]**
 - `/api/webhooks/{service_token}` accepts GitHub / GitLab / Gitea payloads, verifies HMAC, queues redeploy.
 - Show a per-service webhook URL + secret in Settings.
 - **Deliverable:** push to GitHub, service redeploys.
 
-**Day 23 — One-click templates**
+**Day 23 — One-click templates [DONE]**
 - `templates/*.yml` (Postgres, Redis, MySQL, MongoDB, MinIO, n8n, Uptime Kuma, Mongo Express, pgAdmin, Mailhog).
 - Template = pre-filled service form (image, env defaults, volumes, healthcheck).
 - **Deliverable:** "Add Postgres" → 2 clicks → running with persistent volume + auto-generated password (stored as secret).

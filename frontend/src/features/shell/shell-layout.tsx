@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  Rocket,
   ScrollText,
   Server,
   Settings,
@@ -20,6 +21,7 @@ import { useAuthStore } from "@/stores/auth-store";
 const navigation = [
   { to: "/", label: "Projects", icon: FolderKanban },
   { to: "/services", label: "Services", icon: Boxes },
+  { to: "/templates", label: "Templates", icon: Rocket },
   { to: "/volumes", label: "Volumes", icon: Shapes },
   { to: "/networks", label: "Networks", icon: Network },
   { to: "/system", label: "System", icon: Server },
@@ -52,8 +54,8 @@ export function ShellLayout() {
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 21</p>
-                  <h1 className="text-xl font-semibold">Operator console</h1>
+                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 23</p>
+                  <h1 className="text-xl font-semibold">One-click console</h1>
                 </div>
               </div>
 
