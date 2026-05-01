@@ -9,6 +9,7 @@ from sqlmodel import select
 from starlette.concurrency import run_in_threadpool
 
 from backend.app.api.auth import User, get_current_user
+from backend.app.api.webhooks import generate_secret, generate_token
 from backend.app.db import session_scope
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.deploy import Deploy
@@ -129,6 +130,26 @@ class RollbackResponse(BaseModel):
     deploy_id: UUID
     status: str
     image_tag: str
+
+
+class WebhookConfigUpdateRequest(BaseModel):
+    git_url: str | None = Field(default=None, max_length=1000)
+    branch: str | None = Field(default=None, max_length=255)
+    dockerfile_path: str | None = Field(default=None, max_length=500)
+    build_args: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class WebhookConfigResponse(BaseModel):
+    enabled: bool
+    url_path: str
+    token: str
+    secret: str
+    git_url: str | None = None
+    branch: str | None = None
+    dockerfile_path: str | None = None
+    build_args: dict[str, str] = Field(default_factory=dict)
+    last_event_at: str | None = None
 
 
 class ServiceEnvEntry(BaseModel):
@@ -976,3 +997,125 @@ async def delete_service_env(
     current_user: User = Depends(get_current_user),
 ) -> ServiceEnvDeleteResponse:
     return await run_in_threadpool(_delete_service_env_sync, service_id, key, apply, current_user)
+
+
+def _webhook_response(service: Service) -> WebhookConfigResponse:
+    webhook = (service.config or {}).get("webhook") or {}
+    return WebhookConfigResponse(
+        enabled=bool(webhook.get("enabled", True)),
+        url_path=f"/api/webhooks/{webhook.get('token', '')}",
+        token=webhook.get("token", ""),
+        secret=webhook.get("secret", ""),
+        git_url=webhook.get("git_url"),
+        branch=webhook.get("branch"),
+        dockerfile_path=webhook.get("dockerfile_path"),
+        build_args=webhook.get("build_args") or {},
+        last_event_at=webhook.get("last_event_at"),
+    )
+
+
+def _ensure_webhook(service: Service) -> dict:
+    config = dict(service.config or {})
+    webhook = dict(config.get("webhook") or {})
+    if not webhook.get("token"):
+        webhook["token"] = generate_token()
+    if not webhook.get("secret"):
+        webhook["secret"] = generate_secret()
+    webhook.setdefault("enabled", True)
+    config["webhook"] = webhook
+    service.config = config
+    return webhook
+
+
+def _read_webhook_sync(service_id: UUID, current_user: User) -> WebhookConfigResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to view webhook config")
+        # lazy-create the token + secret on first access
+        webhook = (service.config or {}).get("webhook") or {}
+        if not webhook.get("token") or not webhook.get("secret"):
+            _ensure_webhook(service)
+            session.add(service)
+            session.commit()
+            session.refresh(service)
+        return _webhook_response(service)
+
+
+def _update_webhook_sync(
+    service_id: UUID, payload: WebhookConfigUpdateRequest, current_user: User
+) -> WebhookConfigResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to update webhook config")
+        webhook = _ensure_webhook(service)
+        if payload.git_url is not None:
+            webhook["git_url"] = payload.git_url or None
+        if payload.branch is not None:
+            webhook["branch"] = payload.branch or None
+        if payload.dockerfile_path is not None:
+            webhook["dockerfile_path"] = payload.dockerfile_path or None
+        webhook["build_args"] = payload.build_args
+        webhook["enabled"] = payload.enabled
+        config = dict(service.config or {})
+        config["webhook"] = webhook
+        service.config = config
+        _record_audit_log(
+            session,
+            current_user,
+            "service.webhook.update",
+            service,
+            {"enabled": payload.enabled, "branch": webhook.get("branch")},
+        )
+        session.add(service)
+        session.commit()
+        session.refresh(service)
+        return _webhook_response(service)
+
+
+def _rotate_webhook_sync(service_id: UUID, current_user: User) -> WebhookConfigResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to rotate webhook")
+        config = dict(service.config or {})
+        webhook = dict(config.get("webhook") or {})
+        webhook["token"] = generate_token()
+        webhook["secret"] = generate_secret()
+        webhook.setdefault("enabled", True)
+        config["webhook"] = webhook
+        service.config = config
+        _record_audit_log(
+            session,
+            current_user,
+            "service.webhook.rotate",
+            service,
+            {"rotated": True},
+        )
+        session.add(service)
+        session.commit()
+        session.refresh(service)
+        return _webhook_response(service)
+
+
+@router.get("/{service_id}/webhook", response_model=WebhookConfigResponse)
+async def read_service_webhook(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> WebhookConfigResponse:
+    return await run_in_threadpool(_read_webhook_sync, service_id, current_user)
+
+
+@router.put("/{service_id}/webhook", response_model=WebhookConfigResponse)
+async def update_service_webhook(
+    service_id: UUID,
+    payload: WebhookConfigUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> WebhookConfigResponse:
+    return await run_in_threadpool(_update_webhook_sync, service_id, payload, current_user)
+
+
+@router.post("/{service_id}/webhook/rotate", response_model=WebhookConfigResponse)
+async def rotate_service_webhook(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> WebhookConfigResponse:
+    return await run_in_threadpool(_rotate_webhook_sync, service_id, current_user)

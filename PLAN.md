@@ -241,7 +241,7 @@ deployment_manager/
 - Validation client + server side.
 - **Deliverable:** full create flow from UI; redeploy from UI.
 
-**Day 21 — System page + audit log**
+**Day 21 — System page + audit log [DONE]**
 - Host info card (cores, RAM, disk, engine version), images / volumes / networks tables with prune buttons.
 - Audit log timeline (who did what, when, on which resource).
 - **Deliverable:** end of week 3 — UI is usable end-to-end. Soft launch: deploy your own side project to it.

@@ -184,6 +184,83 @@ export interface SystemInfoResponse {
   [key: string]: unknown;
 }
 
+export interface HostDiskUsage {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  mountpoint: string;
+}
+
+export interface HostSummary {
+  name: string | null;
+  operating_system: string | null;
+  architecture: string | null;
+  kernel_version: string | null;
+  docker_version: string | null;
+  api_version: string | null;
+  storage_driver: string | null;
+  cgroup_version: string | null;
+  cpu_count: number | null;
+  memory_total_bytes: number | null;
+  containers_total: number | null;
+  containers_running: number | null;
+  containers_paused: number | null;
+  containers_stopped: number | null;
+  images_total: number | null;
+  disk: HostDiskUsage | null;
+}
+
+export interface ImageSummary {
+  id: string;
+  short_id: string;
+  tags: string[];
+  created: string | null;
+  size: number | null;
+  labels: Record<string, string>;
+}
+
+export type PruneTarget = "containers" | "images" | "volumes" | "builder";
+
+export interface PruneRequest {
+  targets: PruneTarget[];
+}
+
+export interface PruneResponse {
+  containers?: { ContainersDeleted?: string[] | null; SpaceReclaimed?: number };
+  images?: { ImagesDeleted?: unknown[] | null; SpaceReclaimed?: number };
+  volumes?: { VolumesDeleted?: string[] | null; SpaceReclaimed?: number };
+  builder_cache?: { CachesDeleted?: string[] | null; SpaceReclaimed?: number; warning?: string };
+  [key: string]: unknown;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  actor_email: string | null;
+  created_at: string;
+  details: Record<string, unknown>;
+}
+
+export interface AuditPage {
+  items: AuditEntry[];
+  total: number;
+}
+
+export interface AuditQuery {
+  limit?: number;
+  offset?: number;
+  actor_id?: string;
+  resource_type?: string;
+  resource_id?: string;
+  action?: string;
+  since?: string;
+  until?: string;
+}
+
 export interface RollbackResponse {
   deploy_id: string;
   status: string;
@@ -196,6 +273,26 @@ export interface ServiceDeployRequest {
   commit?: string | null;
   dockerfile_path?: string | null;
   build_args?: Record<string, string>;
+}
+
+export interface WebhookConfigUpdateRequest {
+  git_url?: string | null;
+  branch?: string | null;
+  dockerfile_path?: string | null;
+  build_args?: Record<string, string>;
+  enabled?: boolean;
+}
+
+export interface WebhookConfigResponse {
+  enabled: boolean;
+  url_path: string;
+  token: string;
+  secret: string;
+  git_url: string | null;
+  branch: string | null;
+  dockerfile_path: string | null;
+  build_args: Record<string, string>;
+  last_event_at: string | null;
 }
 
 export interface ServiceEnvUpsertRequest {

@@ -6,6 +6,8 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  ScrollText,
+  Server,
   Settings,
   Shapes,
 } from "lucide-react";
@@ -20,6 +22,8 @@ const navigation = [
   { to: "/services", label: "Services", icon: Boxes },
   { to: "/volumes", label: "Volumes", icon: Shapes },
   { to: "/networks", label: "Networks", icon: Network },
+  { to: "/system", label: "System", icon: Server },
+  { to: "/audit", label: "Audit log", icon: ScrollText },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -48,8 +52,8 @@ export function ShellLayout() {
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 19</p>
-                  <h1 className="text-xl font-semibold">Metrics cockpit</h1>
+                  <p className="text-sm uppercase tracking-[0.24em] text-mist/65">Day 21</p>
+                  <h1 className="text-xl font-semibold">Operator console</h1>
                 </div>
               </div>
 

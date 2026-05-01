@@ -4,11 +4,13 @@ from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
+from backend.app.api.audit import router as audit_router
 from backend.app.api.auth import ensure_bootstrap_admin, router as auth_router
 from backend.app.api.inventory import router as inventory_router
 from backend.app.api.lifecycle import router as lifecycle_router
 from backend.app.api.services import router as services_router
 from backend.app.api.system import router as system_router
+from backend.app.api.webhooks import router as webhooks_router
 from backend.app.config import get_settings
 from backend.app.db import Session, engine
 from backend.app.core.docker_client import ping_docker
@@ -41,11 +43,13 @@ app = FastAPI(
     debug=settings.app_debug,
     lifespan=lifespan,
 )
+app.include_router(audit_router)
 app.include_router(auth_router)
 app.include_router(inventory_router)
 app.include_router(lifecycle_router)
 app.include_router(services_router)
 app.include_router(system_router)
+app.include_router(webhooks_router)
 app.include_router(logs_ws_router)
 app.include_router(metrics_ws_router)
 

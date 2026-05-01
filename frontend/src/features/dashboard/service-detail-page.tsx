@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Activity, ArrowLeft, Box, Clock3, Layers3, PlugZap } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, ArrowLeft, Box, Clock3, Copy, Layers3, PlugZap, RefreshCw } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ServicesService } from "@/api/generated";
-import type { DeployResponse, ServiceDetailResponse, ServiceEnvEntry, ServiceMetricSample } from "@/api/generated";
+import type { DeployResponse, ServiceDetailResponse, ServiceEnvEntry, ServiceMetricSample, WebhookConfigResponse, WebhookConfigUpdateRequest } from "@/api/generated";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,7 @@ const tabs = [
   { id: "volumes", label: "Volumes" },
   { id: "settings", label: "Settings" },
   { id: "deploys", label: "Deploys" },
+  { id: "webhooks", label: "Webhooks" },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -81,6 +82,12 @@ export function ServiceDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const serviceId = params.serviceId ?? "";
   const activeTab = (searchParams.get("tab") as TabId | null) ?? "overview";
+
+  const webhookQuery = useQuery({
+    queryKey: ["services", "webhook", serviceId],
+    queryFn: () => ServicesService.getWebhook(serviceId),
+    enabled: activeTab === "webhooks",
+  });
 
   const detailQuery = useQuery({
     queryKey: ["services", "detail", serviceId],
@@ -173,6 +180,9 @@ export function ServiceDetailPage() {
       {activeTab === "volumes" ? <VolumesTab service={service} /> : null}
       {activeTab === "settings" ? <SettingsTab service={service} /> : null}
       {activeTab === "deploys" ? <DeploysTab deploys={deploysQuery.data ?? []} isLoading={deploysQuery.isLoading} /> : null}
+      {activeTab === "webhooks" ? (
+        <WebhooksTab serviceId={serviceId} data={webhookQuery.data ?? null} isLoading={webhookQuery.isLoading} />
+      ) : null}
     </div>
   );
 }
@@ -381,6 +391,145 @@ function MiniCard({
         <p className="font-medium">{title}</p>
       </div>
       <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
+function WebhooksTab({
+  serviceId,
+  data,
+  isLoading,
+}: {
+  serviceId: string;
+  data: WebhookConfigResponse | null;
+  isLoading: boolean;
+}) {
+  const qc = useQueryClient();
+  const [gitUrl, setGitUrl] = useState("");
+  const [branch, setBranch] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: WebhookConfigUpdateRequest) => ServicesService.updateWebhook(serviceId, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["services", "webhook", serviceId] }),
+  });
+
+  const rotateMutation = useMutation({
+    mutationFn: () => ServicesService.rotateWebhook(serviceId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["services", "webhook", serviceId] }),
+  });
+
+  const webhookUrl = data ? `${window.location.origin}${data.url_path}` : "";
+
+  function copyToClipboard(text: string) {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function handleSave() {
+    updateMutation.mutate({
+      git_url: gitUrl || data?.git_url || null,
+      branch: branch || data?.branch || null,
+      enabled: data?.enabled ?? true,
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <Card className="rounded-[32px]">
+        <p className="text-sm text-ink/55">Loading webhook configuration...</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card className="rounded-[32px]">
+        <p className="text-sm uppercase tracking-[0.2em] text-ink/45">Webhook URL</p>
+        <p className="mt-3 text-sm text-ink/65">
+          Point your GitHub / GitLab / Gitea push webhook at this URL. The service will redeploy automatically on every push.
+        </p>
+        <div className="mt-5 space-y-4">
+          <div>
+            <p className="mb-1 text-xs uppercase tracking-[0.18em] text-ink/45">Endpoint</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 overflow-x-auto rounded-[20px] bg-ink px-4 py-3 text-xs text-mist/90">
+                {webhookUrl || "—"}
+              </code>
+              <Button variant="secondary" size="sm" onClick={() => copyToClipboard(webhookUrl)}>
+                <Copy className="h-3.5 w-3.5" />
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs uppercase tracking-[0.18em] text-ink/45">HMAC secret</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 overflow-x-auto rounded-[20px] bg-ink px-4 py-3 text-xs text-mist/90">
+                {data?.secret || "—"}
+              </code>
+              <Button variant="secondary" size="sm" onClick={() => copyToClipboard(data?.secret ?? "")}>
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </Button>
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => rotateMutation.mutate()}
+            disabled={rotateMutation.isPending}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {rotateMutation.isPending ? "Rotating…" : "Rotate token & secret"}
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="rounded-[32px]">
+        <p className="text-sm uppercase tracking-[0.2em] text-ink/45">Git source</p>
+        <p className="mt-3 text-sm text-ink/65">
+          Configure the Git repository and branch to clone and build when a push event arrives.
+        </p>
+        <div className="mt-5 space-y-4">
+          <div>
+            <p className="mb-1 text-xs uppercase tracking-[0.18em] text-ink/45">Git URL</p>
+            <input
+              className="w-full rounded-[20px] border border-ink/15 bg-mist/80 px-4 py-3 text-sm outline-none focus:border-cyan/60"
+              placeholder={data?.git_url ?? "https://github.com/owner/repo.git"}
+              value={gitUrl}
+              onChange={(e) => setGitUrl(e.target.value)}
+            />
+          </div>
+          <div>
+            <p className="mb-1 text-xs uppercase tracking-[0.18em] text-ink/45">Branch (optional)</p>
+            <input
+              className="w-full rounded-[20px] border border-ink/15 bg-mist/80 px-4 py-3 text-sm outline-none focus:border-cyan/60"
+              placeholder={data?.branch ?? "main"}
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="primary" size="sm" onClick={handleSave} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+            {data?.git_url ? (
+              <p className="text-xs text-ink/55">Current: {data.git_url}{data.branch ? ` @ ${data.branch}` : ""}</p>
+            ) : null}
+          </div>
+          {updateMutation.isError ? (
+            <p className="text-xs text-coral">
+              {updateMutation.error instanceof Error ? updateMutation.error.message : "Save failed"}
+            </p>
+          ) : null}
+          {updateMutation.isSuccess ? (
+            <p className="text-xs text-emerald-600">Saved successfully.</p>
+          ) : null}
+        </div>
+      </Card>
     </div>
   );
 }

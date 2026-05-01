@@ -87,24 +87,30 @@ def remove_image(image_id: str, force: bool = False) -> dict:
     }
 
 
-def prune_system() -> dict:
+def prune_system(targets: set[str] | None = None) -> dict:
     client = get_docker_client()
-    build_cache_result: dict | None = None
+    selected = targets or {"containers", "images", "volumes", "builder"}
+    result: dict = {}
 
-    if hasattr(client.api, "prune_builds"):
-        try:
-            build_cache_result = client.api.prune_builds()
-        except APIError:
-            build_cache_result = {
-                "warning": "Build cache pruning is not supported by the current Docker daemon.",
+    if "containers" in selected:
+        result["containers"] = client.containers.prune()
+    if "images" in selected:
+        result["images"] = client.images.prune()
+    if "volumes" in selected:
+        result["volumes"] = client.volumes.prune()
+    if "builder" in selected:
+        if hasattr(client.api, "prune_builds"):
+            try:
+                result["builder_cache"] = client.api.prune_builds()
+            except APIError:
+                result["builder_cache"] = {
+                    "warning": "Build cache pruning is not supported by the current Docker daemon.",
+                }
+        else:
+            result["builder_cache"] = {
+                "warning": "Build cache pruning is not available on this Docker SDK.",
             }
-
-    return {
-        "containers": client.containers.prune(),
-        "images": client.images.prune(),
-        "volumes": client.volumes.prune(),
-        "builder_cache": build_cache_result,
-    }
+    return result
 
 
 __all__ = [

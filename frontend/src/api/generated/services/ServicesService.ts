@@ -11,6 +11,8 @@ import type {
   ServiceEnvUpsertRequest,
   ServiceMetricSample,
   ServiceSummary,
+  WebhookConfigResponse,
+  WebhookConfigUpdateRequest,
 } from "../models";
 import { request } from "../core/request";
 
@@ -106,6 +108,28 @@ export const ServicesService = {
     return request<ServiceActionResponse>({
       method: "DELETE",
       url: `/api/services/${serviceId}?force=true&volumes=false`,
+    });
+  },
+
+  getWebhook(serviceId: string) {
+    return request<WebhookConfigResponse>({
+      method: "GET",
+      url: `/api/services/${serviceId}/webhook`,
+    });
+  },
+
+  updateWebhook(serviceId: string, payload: WebhookConfigUpdateRequest) {
+    return request<WebhookConfigResponse>({
+      method: "PUT",
+      url: `/api/services/${serviceId}/webhook`,
+      body: payload,
+    });
+  },
+
+  rotateWebhook(serviceId: string) {
+    return request<WebhookConfigResponse>({
+      method: "POST",
+      url: `/api/services/${serviceId}/webhook/rotate`,
     });
   },
 };

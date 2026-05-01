@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm install *)",
       "Bash(./node_modules/.bin/tsc -b --pretty false)",
-      "Bash(./node_modules/.bin/vite build *)"
+      "Bash(./node_modules/.bin/vite build *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/app/api/audit.py'\\).read\\(\\)\\); ast.parse\\(open\\('backend/app/api/system.py'\\).read\\(\\)\\); ast.parse\\(open\\('backend/app/api/lifecycle.py'\\).read\\(\\)\\); ast.parse\\(open\\('backend/app/core/lifecycle.py'\\).read\\(\\)\\); ast.parse\\(open\\('backend/app/main.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ],
     "additionalDirectories": [
       "d:\\my-projects\\deployment_manager"

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from docker.errors import DockerException
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from backend.app.core.lifecycle import (
@@ -15,6 +16,13 @@ from backend.app.core.lifecycle import (
     stop_container,
     unpause_container,
 )
+
+
+_ALLOWED_PRUNE_TARGETS = {"containers", "images", "volumes", "builder"}
+
+
+class PruneRequest(BaseModel):
+    targets: list[str] = Field(default_factory=lambda: ["containers", "images", "volumes", "builder"])
 
 router = APIRouter(tags=["lifecycle"])
 
@@ -85,9 +93,16 @@ async def delete_image(image_id: str, force: bool = Query(default=False)) -> dic
 
 
 @router.post("/api/system/prune")
-async def post_system_prune() -> dict:
+async def post_system_prune(payload: PruneRequest | None = None) -> dict:
+    targets: set[str] = set(payload.targets) if payload and payload.targets else set(_ALLOWED_PRUNE_TARGETS)
+    invalid = targets - _ALLOWED_PRUNE_TARGETS
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown prune targets: {', '.join(sorted(invalid))}",
+        )
     try:
-        return await run_in_threadpool(prune_system)
+        return await run_in_threadpool(prune_system, targets)
     except APIError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DockerException as exc:
