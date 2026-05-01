@@ -161,6 +161,59 @@ def test_list_services_returns_dashboard_rows(monkeypatch) -> None:
     assert response.json()[0]["cpu_percent"] == 12.5
 
 
+def test_read_service_detail_returns_overview_payload(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    service_id = uuid4()
+    monkeypatch.setattr(
+        "backend.app.api.services._read_service_detail_sync",
+        lambda service_id, user: {
+            "service_id": str(service_id),
+            "name": "Demo Service",
+            "slug": "demo-service",
+            "image": "nginx:latest",
+            "status": "running",
+            "project_id": str(uuid4()),
+            "project_name": "Owner Project",
+            "created_at": "2026-05-01T12:00:00+00:00",
+            "updated_at": "2026-05-01T12:05:00+00:00",
+            "domain": "demo.localhost",
+            "ports": [{"container_port": 80, "host_port": 8080}],
+            "volumes": [{"source": "demo-data", "target": "/data", "mode": "rw"}],
+            "network": "public",
+            "restart_policy": "unless-stopped",
+            "healthcheck": {"type": "http", "value": "http://127.0.0.1/healthz"},
+            "uptime_seconds": 180.0,
+            "cpu_percent": 10.5,
+            "memory_percent": 42.0,
+            "recent_events": [
+                {
+                    "event_id": str(uuid4()),
+                    "action": "service.create",
+                    "created_at": "2026-05-01T12:00:00+00:00",
+                    "actor_name": "Owner User",
+                    "details": {"image": "nginx:latest"},
+                }
+            ],
+        },
+    )
+
+    response = client.get(f"/api/services/{service_id}")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["service_id"] == str(service_id)
+    assert response.json()["recent_events"][0]["action"] == "service.create"
+
+
 def test_rollout_built_service_queues_rollout(monkeypatch) -> None:
     current_user = User(
         id=uuid4(),

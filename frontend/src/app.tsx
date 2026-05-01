@@ -6,6 +6,7 @@ import { useAuthBootstrap } from "@/features/auth/use-auth-bootstrap";
 import { NetworksPage } from "@/features/dashboard/networks-page";
 import { NotFoundPage } from "@/features/dashboard/not-found-page";
 import { OverviewPage } from "@/features/dashboard/overview-page";
+import { ServiceDetailPage } from "@/features/dashboard/service-detail-page";
 import { ServicesPage } from "@/features/dashboard/services-page";
 import { SettingsPage } from "@/features/dashboard/settings-page";
 import { VolumesPage } from "@/features/dashboard/volumes-page";
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
         children: [
           { path: "/", element: <OverviewPage /> },
           { path: "/services", element: <ServicesPage /> },
+          { path: "/services/:serviceId", element: <ServiceDetailPage /> },
           { path: "/volumes", element: <VolumesPage /> },
           { path: "/networks", element: <NetworksPage /> },
           { path: "/settings", element: <SettingsPage /> },

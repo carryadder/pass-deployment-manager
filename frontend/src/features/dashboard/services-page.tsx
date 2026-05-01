@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { ServicesService } from "@/api/generated";
 import type { CreateServiceRequest, ServiceSummary } from "@/api/generated";
@@ -336,7 +337,9 @@ function ServiceRow({
   return (
     <tr>
       <td className="px-4 py-4">
-        <div className="font-medium">{service.name}</div>
+        <Link to={`/services/${service.service_id}`} className="font-medium text-ink hover:text-slate">
+          {service.name}
+        </Link>
         <div className="text-xs text-ink/50">{service.domain || service.slug}</div>
       </td>
       <td className="px-4 py-4">

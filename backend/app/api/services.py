@@ -202,6 +202,36 @@ class ServiceActionResponse(BaseModel):
     action: str
 
 
+class ServiceEvent(BaseModel):
+    event_id: UUID
+    action: str
+    created_at: str
+    actor_name: str | None = None
+    details: dict = Field(default_factory=dict)
+
+
+class ServiceDetailResponse(BaseModel):
+    service_id: UUID
+    name: str
+    slug: str
+    image: str
+    status: str
+    project_id: UUID
+    project_name: str | None = None
+    created_at: str
+    updated_at: str
+    domain: str | None = None
+    ports: list[dict] = Field(default_factory=list)
+    volumes: list[dict] = Field(default_factory=list)
+    network: str | None = None
+    restart_policy: str | None = None
+    healthcheck: dict | None = None
+    uptime_seconds: float | None = None
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+    recent_events: list[ServiceEvent] = Field(default_factory=list)
+
+
 def _slugify(name: str) -> str:
     slug = "-".join(name.lower().strip().split())
     return "".join(ch for ch in slug if ch.isalnum() or ch == "-").strip("-") or "service"
@@ -421,6 +451,58 @@ def _list_services_sync(current_user: User) -> list[ServiceListItem]:
 @router.get("", response_model=list[ServiceListItem])
 async def list_services(current_user: User = Depends(get_current_user)) -> list[ServiceListItem]:
     return await run_in_threadpool(_list_services_sync, current_user)
+
+
+def _read_service_detail_sync(service_id: UUID, current_user: User) -> ServiceDetailResponse:
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to view this service")
+
+        cpu_percent, memory_percent = _latest_metrics(service.id)
+        recent_events = session.exec(
+            select(AuditLog)
+            .where(AuditLog.resource_type == "service", AuditLog.resource_id == str(service.id))
+            .order_by(AuditLog.created_at.desc())
+        ).all()[:8]
+
+        return ServiceDetailResponse(
+            service_id=service.id,
+            name=service.name,
+            slug=service.slug,
+            image=service.image,
+            status=service.status,
+            project_id=service.project_id,
+            project_name=service.project.name if service.project is not None else None,
+            created_at=service.created_at.isoformat(),
+            updated_at=service.updated_at.isoformat(),
+            domain=service.config.get("domain"),
+            ports=service.config.get("ports", []),
+            volumes=service.config.get("volumes", []),
+            network=service.config.get("network"),
+            restart_policy=service.config.get("restart_policy"),
+            healthcheck=service.config.get("healthcheck"),
+            uptime_seconds=_service_uptime_seconds(service),
+            cpu_percent=cpu_percent,
+            memory_percent=memory_percent,
+            recent_events=[
+                ServiceEvent(
+                    event_id=event.id,
+                    action=event.action,
+                    created_at=event.created_at.isoformat(),
+                    actor_name=event.actor.full_name if event.actor is not None else None,
+                    details=event.details or {},
+                )
+                for event in recent_events
+            ],
+        )
+
+
+@router.get("/{service_id}", response_model=ServiceDetailResponse)
+async def read_service_detail(
+    service_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> ServiceDetailResponse:
+    return await run_in_threadpool(_read_service_detail_sync, service_id, current_user)
 
 
 def _deploy_service_from_git_sync(

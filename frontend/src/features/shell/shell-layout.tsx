@@ -29,7 +29,11 @@ export function ShellLayout() {
   const currentUser = useAuthStore((state) => state.currentUser);
 
   const headline = useMemo(() => {
-    const active = navigation.find((item) => item.to === location.pathname);
+    const active = navigation.find((item) =>
+      item.to === "/"
+        ? location.pathname === "/"
+        : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`),
+    );
     return active?.label ?? "Projects";
   }, [location.pathname]);
 

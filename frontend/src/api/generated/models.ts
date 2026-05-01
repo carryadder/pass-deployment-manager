@@ -49,6 +49,43 @@ export interface ServiceSummary {
   memory_percent?: number | null;
 }
 
+export interface ServiceEvent {
+  event_id: string;
+  action: string;
+  created_at: string;
+  actor_name?: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface ServiceDetailResponse {
+  service_id: string;
+  name: string;
+  slug: string;
+  image: string;
+  status: string;
+  project_id: string;
+  project_name?: string | null;
+  created_at: string;
+  updated_at: string;
+  domain?: string | null;
+  ports: Array<{
+    container_port: number;
+    host_port: number | null;
+  }>;
+  volumes: Array<{
+    source: string;
+    target: string;
+    mode?: "ro" | "rw";
+  }>;
+  network?: string | null;
+  restart_policy?: string | null;
+  healthcheck?: Record<string, unknown> | null;
+  uptime_seconds?: number | null;
+  cpu_percent?: number | null;
+  memory_percent?: number | null;
+  recent_events: ServiceEvent[];
+}
+
 export interface ServiceActionResponse {
   service_id: string;
   status: string;
@@ -79,6 +116,35 @@ export interface CreateServiceResponse {
   container_name?: string | null;
   image: string;
   project_id: string;
+}
+
+export interface DeployResponse {
+  deploy_id: string;
+  service_id: string;
+  status: string;
+  source_type: string;
+  source_ref?: string | null;
+  image_tag?: string | null;
+}
+
+export interface ServiceEnvEntry {
+  key: string;
+  value?: string | null;
+  is_secret: boolean;
+  has_value: boolean;
+}
+
+export interface ServiceMetricSample {
+  timestamp: string;
+  cpu_percent: number;
+  memory_usage_bytes: number;
+  memory_limit_bytes: number;
+  memory_percent: number;
+  network_rx_bytes: number;
+  network_tx_bytes: number;
+  block_read_bytes: number;
+  block_write_bytes: number;
+  pids: number;
 }
 
 export interface VolumeSummary {

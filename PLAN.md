@@ -221,7 +221,7 @@ deployment_manager/
 - Filters & search.
 - **Deliverable:** create a service from a modal, see it in the table, take actions.
 
-**Day 17 — Service detail page**
+**Day 17 — Service detail page [DONE]**
 - Tabs: **Overview**, **Logs**, **Metrics**, **Env**, **Volumes**, **Settings**, **Deploys**.
 - Overview: status, image, ports, domain link, last deploy, recent events.
 - **Deliverable:** click a row, get a useful detail page.
