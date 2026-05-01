@@ -189,3 +189,25 @@ export interface RollbackResponse {
   status: string;
   image_tag: string;
 }
+
+export interface ServiceDeployRequest {
+  git_url: string;
+  branch?: string | null;
+  commit?: string | null;
+  dockerfile_path?: string | null;
+  build_args?: Record<string, string>;
+}
+
+export interface ServiceEnvUpsertRequest {
+  key: string;
+  value: string;
+  is_secret?: boolean;
+  apply?: boolean;
+}
+
+export interface ServiceEnvMutationResponse {
+  entry: ServiceEnvEntry;
+  applied: boolean;
+  deploy_id?: string | null;
+  service_status: string;
+}

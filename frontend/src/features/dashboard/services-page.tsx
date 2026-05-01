@@ -4,28 +4,14 @@ import { Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { ServicesService } from "@/api/generated";
-import type { CreateServiceRequest, ServiceMetricSample, ServiceSummary } from "@/api/generated";
+import type { ServiceMetricSample, ServiceSummary } from "@/api/generated";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ServiceCreateWizard } from "@/features/dashboard/service-create-wizard";
 import { Sparkline, type SparklineSample } from "@/features/dashboard/service-metrics-shared";
 import { queryClient } from "@/lib/query-client";
-
-const initialForm: CreateServiceRequest = {
-  name: "",
-  image: "nginx:latest",
-  cpus: 0.5,
-  memory_mb: 256,
-  disk_mb: null,
-  env: {},
-  ports: [{ container_port: 80, host_port: 8080 }],
-  volumes: [],
-  network: null,
-  domain: "",
-  restart_policy: "unless-stopped",
-  pids_limit: 256,
-};
 
 function formatPercent(value?: number | null) {
   return value == null ? "--" : `${value.toFixed(1)}%`;
@@ -60,21 +46,11 @@ function statusTone(status: string): "success" | "warning" | "info" | "neutral" 
 export function ServicesPage() {
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<CreateServiceRequest>(initialForm);
   const [busyServiceId, setBusyServiceId] = useState<string | null>(null);
 
   const servicesQuery = useQuery({
     queryKey: ["services", "list"],
     queryFn: ServicesService.list,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: ServicesService.create,
-    onSuccess: () => {
-      setShowCreate(false);
-      setForm(initialForm);
-      queryClient.invalidateQueries({ queryKey: ["services", "list"] });
-    },
   });
 
   const actionMutation = useMutation({
@@ -118,8 +94,6 @@ export function ServicesPage() {
     );
   }, [search, servicesQuery.data]);
 
-  const createError =
-    createMutation.error instanceof Error ? createMutation.error.message : "Unable to create service.";
   const actionError =
     actionMutation.error instanceof Error ? actionMutation.error.message : "Unable to perform action.";
   const sparklineQueries = useQueries({
@@ -137,6 +111,7 @@ export function ServicesPage() {
 
   return (
     <div className="grid gap-6">
+      {showCreate ? <ServiceCreateWizard onClose={() => setShowCreate(false)} /> : null}
       <Card className="rounded-[32px]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -163,139 +138,10 @@ export function ServicesPage() {
             </Button>
             <Button className="gap-2" onClick={() => setShowCreate((current) => !current)}>
               <Plus className="h-4 w-4" />
-              {showCreate ? "Close form" : "New service"}
+              {showCreate ? "Close wizard" : "New service"}
             </Button>
           </div>
         </div>
-
-        {showCreate ? (
-          <div className="mt-6 rounded-[28px] border border-ink/10 bg-mist/80 p-5">
-            <div className="mb-4">
-              <p className="text-sm uppercase tracking-[0.18em] text-ink/45">Create service</p>
-              <h4 className="mt-2 text-xl font-semibold">Launch a Docker-backed service</h4>
-            </div>
-            <form
-              className="grid gap-4 md:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                createMutation.mutate(form);
-              }}
-            >
-              <label className="space-y-2 text-sm text-ink/70">
-                <span>Name</span>
-                <Input
-                  value={form.name}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="hello-web"
-                />
-              </label>
-              <label className="space-y-2 text-sm text-ink/70">
-                <span>Image</span>
-                <Input
-                  value={form.image}
-                  onChange={(event) => setForm((current) => ({ ...current, image: event.target.value }))}
-                  placeholder="nginx:latest"
-                />
-              </label>
-              <label className="space-y-2 text-sm text-ink/70">
-                <span>CPU</span>
-                <Input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={form.cpus}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, cpus: Number(event.target.value || 0.5) }))
-                  }
-                />
-              </label>
-              <label className="space-y-2 text-sm text-ink/70">
-                <span>Memory (MB)</span>
-                <Input
-                  type="number"
-                  min="64"
-                  step="64"
-                  value={form.memory_mb}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      memory_mb: Number(event.target.value || 256),
-                    }))
-                  }
-                />
-              </label>
-              <label className="space-y-2 text-sm text-ink/70">
-                <span>Container port</span>
-                <Input
-                  type="number"
-                  min="1"
-                  max="65535"
-                  value={form.ports?.[0]?.container_port ?? 80}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      ports: [
-                        {
-                          container_port: Number(event.target.value || 80),
-                          host_port: current.ports?.[0]?.host_port ?? null,
-                        },
-                      ],
-                    }))
-                  }
-                />
-              </label>
-              <label className="space-y-2 text-sm text-ink/70">
-                <span>Host port</span>
-                <Input
-                  type="number"
-                  min="1"
-                  max="65535"
-                  value={form.ports?.[0]?.host_port ?? ""}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      ports: [
-                        {
-                          container_port: current.ports?.[0]?.container_port ?? 80,
-                          host_port: event.target.value ? Number(event.target.value) : null,
-                        },
-                      ],
-                    }))
-                  }
-                  placeholder="8080"
-                />
-              </label>
-              <label className="space-y-2 text-sm text-ink/70 md:col-span-2">
-                <span>Domain</span>
-                <Input
-                  value={form.domain ?? ""}
-                  onChange={(event) => setForm((current) => ({ ...current, domain: event.target.value || null }))}
-                  placeholder="hello.localhost"
-                />
-              </label>
-              {createMutation.isError ? (
-                <p className="md:col-span-2 rounded-2xl bg-coral/10 px-4 py-3 text-sm text-coral">
-                  {createError}
-                </p>
-              ) : null}
-              <div className="md:col-span-2 flex flex-wrap gap-3">
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Creating..." : "Create service"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setShowCreate(false);
-                    setForm(initialForm);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </div>
-        ) : null}
 
         {actionMutation.isError ? (
           <p className="mt-6 rounded-2xl bg-coral/10 px-4 py-3 text-sm text-coral">{actionError}</p>

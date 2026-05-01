@@ -236,7 +236,7 @@ deployment_manager/
 - Range selector: 5m / 1h / 24h.
 - **Deliverable:** charts update live; refresh doesn't lose state.
 
-**Day 20 — Create / edit service flow**
+**Day 20 — Create / edit service flow [DONE]**
 - Multi-step form: source (image / git / compose) → resources (CPU sliders, memory, disk) → networking (domain, ports) → env / secrets → review.
 - Validation client + server side.
 - **Deliverable:** full create flow from UI; redeploy from UI.

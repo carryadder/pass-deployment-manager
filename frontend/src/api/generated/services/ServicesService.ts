@@ -4,8 +4,11 @@ import type {
   DeployResponse,
   RollbackResponse,
   ServiceActionResponse,
+  ServiceDeployRequest,
   ServiceDetailResponse,
   ServiceEnvEntry,
+  ServiceEnvMutationResponse,
+  ServiceEnvUpsertRequest,
   ServiceMetricSample,
   ServiceSummary,
 } from "../models";
@@ -80,6 +83,22 @@ export const ServicesService = {
     return request<ServiceMetricSample[]>({
       method: "GET",
       url: `/api/services/${serviceId}/metrics?range=${encodeURIComponent(range)}`,
+    });
+  },
+
+  deployFromGit(serviceId: string, payload: ServiceDeployRequest) {
+    return request<DeployResponse>({
+      method: "POST",
+      url: `/api/services/${serviceId}/deploy`,
+      body: payload,
+    });
+  },
+
+  upsertEnv(serviceId: string, payload: ServiceEnvUpsertRequest) {
+    return request<ServiceEnvMutationResponse>({
+      method: "POST",
+      url: `/api/services/${serviceId}/env`,
+      body: payload,
     });
   },
 

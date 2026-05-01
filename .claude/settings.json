@@ -1,5 +1,10 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(./node_modules/.bin/tsc -b --pretty false)",
+      "Bash(./node_modules/.bin/vite build *)"
+    ],
     "additionalDirectories": [
       "d:\\my-projects\\deployment_manager"
     ]

@@ -226,7 +226,7 @@ function OverviewTab({
             {service.ports.length ? (
               service.ports.map((port) => (
                 <p key={`${port.container_port}-${port.host_port}`} className="text-sm text-ink/70">
-                  {port.host_port ?? "auto"} -> {port.container_port}
+                  {port.host_port ?? "auto"} {"->"} {port.container_port}
                 </p>
               ))
             ) : (
