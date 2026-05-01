@@ -119,3 +119,40 @@ async def service_logs(websocket: WebSocket, service_id: UUID) -> None:
         await _stream_follow_logs(websocket, container, tail=0)
     else:
         await websocket.close()
+
+
+def _get_container_by_id(container_id: str):
+    client = get_docker_client()
+    try:
+        return client.containers.get(container_id)
+    except Exception:
+        return None
+
+
+@router.websocket("/api/containers/{container_id}/logs")
+async def container_logs(websocket: WebSocket, container_id: str) -> None:
+    try:
+        await run_in_threadpool(authenticate_websocket, websocket)
+    except PermissionError as exc:
+        await websocket.close(code=4401, reason=str(exc))
+        return
+
+    container = await run_in_threadpool(_get_container_by_id, container_id)
+    if container is None:
+        await websocket.close(code=4404, reason="Container not found")
+        return
+
+    tail_value = websocket.query_params.get("tail", "200")
+    follow_value = websocket.query_params.get("follow", "true")
+    try:
+        tail = max(0, int(tail_value))
+    except ValueError:
+        tail = 200
+    follow = follow_value.lower() != "false"
+
+    await websocket.accept()
+    await _send_log_history(websocket, container, tail=tail)
+    if follow:
+        await _stream_follow_logs(websocket, container, tail=0)
+    else:
+        await websocket.close()
