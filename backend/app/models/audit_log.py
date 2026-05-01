@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -25,4 +23,4 @@ class AuditLog(UUIDPrimaryKey, TimestampedModel, SQLModel, table=True):
         sa_column=Column(JSONB, nullable=False, server_default="{}"),
     )
 
-    actor: "User | None" = Relationship(back_populates="audit_logs")
+    actor: "User" = Relationship(back_populates="audit_logs")

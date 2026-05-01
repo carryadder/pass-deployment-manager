@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
 
 
@@ -12,11 +12,13 @@ def utcnow() -> datetime:
 class TimestampedModel(SQLModel):
     created_at: datetime = Field(
         default_factory=utcnow,
-        sa_column=Column(DateTime(timezone=True), nullable=False),
+        nullable=False,
+        sa_type=DateTime(timezone=True),
     )
     updated_at: datetime = Field(
         default_factory=utcnow,
-        sa_column=Column(DateTime(timezone=True), nullable=False),
+        nullable=False,
+        sa_type=DateTime(timezone=True),
     )
 
 

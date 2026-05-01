@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -43,5 +41,5 @@ class Invite(UUIDPrimaryKey, TimestampedModel, SQLModel, table=True):
     )
 
     project: "Project" = Relationship()
-    accepted_by: "User | None" = Relationship(sa_relationship_kwargs={"foreign_keys": "Invite.accepted_by_user_id"})
+    accepted_by: "User" = Relationship(sa_relationship_kwargs={"foreign_keys": "Invite.accepted_by_user_id"})
     created_by: "User" = Relationship(sa_relationship_kwargs={"foreign_keys": "Invite.created_by_user_id"})

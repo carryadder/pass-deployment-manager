@@ -1,22 +1,35 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from backend.app.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_BCRYPT_SHA256_PREFIX = "bcrypt_sha256$"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    if hashed_password.startswith(_BCRYPT_SHA256_PREFIX):
+        encoded_hash = hashed_password.removeprefix(_BCRYPT_SHA256_PREFIX).encode("utf-8")
+        return bcrypt.checkpw(_bcrypt_sha256_input(plain_password), encoded_hash)
+
+    # Backward compatibility for existing plain bcrypt hashes.
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    password_hash = bcrypt.hashpw(_bcrypt_sha256_input(password), bcrypt.gensalt())
+    return f"{_BCRYPT_SHA256_PREFIX}{password_hash.decode('utf-8')}"
+
+
+def _bcrypt_sha256_input(password: str) -> bytes:
+    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(digest)
 
 
 def create_access_token(subject: str, extra_claims: dict[str, Any] | None = None) -> str:
