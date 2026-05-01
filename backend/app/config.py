@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Bootstrap Admin"
     deploy_workspace: Path = Path(".dmgr-workspace")
+    metrics_sample_interval_seconds: int = 5
+    metrics_max_samples: int = 60
     traefik_public_network: str = "dmgr-public"
     traefik_cert_resolver: str = "letsencrypt"
     traefik_web_entrypoint: str = "web"

@@ -16,6 +16,7 @@ from backend.app.models.project import Project
 from backend.app.models.secret import Secret
 from backend.app.models.service import Service
 from backend.app.core.runner import DockerException, run_service
+from backend.app.core.metrics import metrics_sampler, parse_metrics_range
 from backend.app.core.service_env import (
     delete_service_env_entry,
     list_service_env_entries,
@@ -145,6 +146,19 @@ class ServiceEnvDeleteResponse(BaseModel):
     applied: bool
     deploy_id: UUID | None = None
     service_status: str
+
+
+class ServiceMetricSample(BaseModel):
+    timestamp: str
+    cpu_percent: float
+    memory_usage_bytes: int
+    memory_limit_bytes: int
+    memory_percent: float
+    network_rx_bytes: int
+    network_tx_bytes: int
+    block_read_bytes: int
+    block_write_bytes: int
+    pids: int
 
 
 def _slugify(name: str) -> str:
@@ -438,6 +452,19 @@ def _read_deploy_logs_sync(deploy_id: UUID, current_user: User) -> DeployLogsRes
         return DeployLogsResponse(deploy_id=deploy_id, lines=get_deploy_logs(deploy_id))
 
 
+def _read_service_metrics_sync(
+    service_id: UUID,
+    current_user: User,
+    range_value: str,
+) -> list[ServiceMetricSample]:
+    parse_metrics_range(range_value)
+    with session_scope() as session:
+        service = _get_service_or_404(session, service_id)
+        _ensure_service_access(service, current_user, "Not allowed to view this service")
+
+    return [ServiceMetricSample(**sample) for sample in metrics_sampler.get_history(service_id, range_value)]
+
+
 def _list_service_env_sync(service_id: UUID, current_user: User) -> list[ServiceEnvEntry]:
     with session_scope() as session:
         service = _get_service_or_404(session, service_id)
@@ -581,6 +608,18 @@ async def read_deploy_logs(
     current_user: User = Depends(get_current_user),
 ) -> DeployLogsResponse:
     return await run_in_threadpool(_read_deploy_logs_sync, deploy_id, current_user)
+
+
+@router.get("/{service_id}/metrics", response_model=list[ServiceMetricSample])
+async def read_service_metrics(
+    service_id: UUID,
+    range: str = "5m",
+    current_user: User = Depends(get_current_user),
+) -> list[ServiceMetricSample]:
+    try:
+        return await run_in_threadpool(_read_service_metrics_sync, service_id, current_user, range)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.get("/{service_id}/env", response_model=list[ServiceEnvEntry])

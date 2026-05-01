@@ -1,6 +1,6 @@
 # Deployment Manager
 
-Day 11 foundation for a self-hosted deployment manager.
+Day 12 foundation for a self-hosted deployment manager.
 
 ## Requirements
 
@@ -56,9 +56,11 @@ Service endpoint:
 - `POST /api/services/{id}/env`
 - `PUT /api/services/{id}/env/{key}`
 - `DELETE /api/services/{id}/env/{key}`
+- `GET /api/services/{id}/metrics?range=5m`
 - `GET /api/services/{id}/deploys`
 - `GET /api/services/deploys/{deploy_id}/logs`
 - `WS /api/services/{id}/logs?tail=200&follow=true`
+- `WS /api/services/{id}/metrics?range=5m`
 
 ## Environment
 
@@ -113,6 +115,12 @@ Example:
 - `GET /api/services/{id}/env` lists saved env entries; secret values are masked from API responses.
 - `POST`, `PUT`, and `DELETE` on `/api/services/{id}/env...` accept `apply=true` by default and queue a redeploy of the current image so changes reach the running container.
 - Secret values are encrypted at rest with the `FERNET_SECRET_KEY` setting before they are stored in the `secrets` table.
+
+## Metrics
+
+- The in-process sampler polls Docker stats every `METRICS_SAMPLE_INTERVAL_SECONDS` seconds and keeps `METRICS_MAX_SAMPLES` points per service in memory.
+- `GET /api/services/{id}/metrics?range=5m` returns recent CPU, memory, network, block I/O, and pid samples.
+- `WS /api/services/{id}/metrics?range=5m` sends recent history first, then streams new samples live.
 
 ## Traefik
 

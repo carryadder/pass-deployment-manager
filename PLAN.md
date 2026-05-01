@@ -190,7 +190,7 @@ deployment_manager/
 - Redeploy service when env changes (or expose `apply` button).
 - **Deliverable:** secret values never appear in DB cleartext; `docker inspect` shows them at runtime.
 
-**Day 12 — Metrics sampler**
+**Day 12 — Metrics sampler [DONE]**
 - `core/metrics.py`: per-service goroutine-style task using `container.stats(stream=True)`, parse CPU% (the canonical formula), mem usage, net rx/tx, blk read/write.
 - Push samples to Redis with 60-sample ring buffer per service.
 - `GET /api/services/{id}/metrics?range=5m` and `WS /api/services/{id}/metrics` for live.

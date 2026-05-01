@@ -272,3 +272,40 @@ def test_delete_service_env_returns_deleted(monkeypatch) -> None:
     assert response.json()["key"] == "API_KEY"
     assert response.json()["deleted"] is True
     assert response.json()["applied"] is False
+
+
+def test_read_service_metrics_returns_samples(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        password_hash="hashed",
+        full_name="Owner User",
+        is_active=True,
+        is_owner=True,
+    )
+    app.dependency_overrides[get_current_user] = lambda: current_user
+    monkeypatch.setattr(
+        "backend.app.api.services._read_service_metrics_sync",
+        lambda service_id, user, range_value: [
+            {
+                "timestamp": "2026-05-01T12:00:00+00:00",
+                "cpu_percent": 12.5,
+                "memory_usage_bytes": 1048576,
+                "memory_limit_bytes": 2097152,
+                "memory_percent": 50.0,
+                "network_rx_bytes": 1200,
+                "network_tx_bytes": 800,
+                "block_read_bytes": 64,
+                "block_write_bytes": 128,
+                "pids": 7,
+            }
+        ],
+    )
+
+    response = client.get(f"/api/services/{uuid4()}/metrics?range=5m")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()[0]["cpu_percent"] == 12.5
+    assert response.json()[0]["memory_percent"] == 50.0

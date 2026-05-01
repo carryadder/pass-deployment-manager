@@ -5,47 +5,14 @@ import threading
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket
-from jose import JWTError
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
 
-from backend.app.api.auth import decode_access_token
-from backend.app.db import session_scope
 from backend.app.models.service import Service
-from backend.app.models.user import User
 from backend.app.core.docker_client import get_docker_client
+from backend.app.ws.common import authenticate_websocket, get_service_for_user
 
 router = APIRouter()
-
-
-def _resolve_token(websocket: WebSocket) -> str | None:
-    authorization = websocket.headers.get("authorization")
-    if authorization and authorization.lower().startswith("bearer "):
-        return authorization.split(" ", 1)[1].strip()
-    return websocket.query_params.get("token")
-
-
-def _authenticate_websocket(websocket: WebSocket) -> User:
-    token = _resolve_token(websocket)
-    if not token:
-        raise PermissionError("Missing bearer token")
-
-    try:
-        payload = decode_access_token(token)
-        user_id = UUID(payload["sub"])
-    except (JWTError, KeyError, ValueError) as exc:
-        raise PermissionError("Invalid or expired token") from exc
-
-    with session_scope() as session:
-        user = session.get(User, user_id)
-        if user is None or not user.is_active:
-            raise PermissionError("User is not authorized for websocket access")
-        return user
-
-
-def _get_service(service_id: UUID) -> Service | None:
-    with session_scope() as session:
-        return session.get(Service, service_id)
 
 
 def _get_container_for_service(service: Service):
@@ -118,13 +85,17 @@ async def _stream_follow_logs(websocket: WebSocket, container, tail: int) -> Non
 @router.websocket("/api/services/{service_id}/logs")
 async def service_logs(websocket: WebSocket, service_id: UUID) -> None:
     try:
-        await run_in_threadpool(_authenticate_websocket, websocket)
+        user = await run_in_threadpool(authenticate_websocket, websocket)
     except PermissionError as exc:
         await websocket.close(code=4401, reason=str(exc))
         return
 
-    service = await run_in_threadpool(_get_service, service_id)
-    if service is None:
+    try:
+        service = await run_in_threadpool(get_service_for_user, service_id, user)
+    except PermissionError as exc:
+        await websocket.close(code=4403, reason=str(exc))
+        return
+    except LookupError:
         await websocket.close(code=4404, reason="Service not found")
         return
 
