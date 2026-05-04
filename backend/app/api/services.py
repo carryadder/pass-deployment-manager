@@ -577,6 +577,7 @@ def _deploy_service_from_git_sync(
             git_url=payload.git_url,
             branch=payload.branch,
             commit=payload.commit,
+            build_context_path=None,
             dockerfile_path=payload.dockerfile_path,
             build_args=payload.build_args,
         )

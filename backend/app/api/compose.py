@@ -14,7 +14,13 @@ from backend.app.api.services import (
     ServiceCreateRequest,
     VolumeMapping,
     _create_service_sync,
+    _ensure_default_project,
+    _record_audit_log,
+    _slugify,
 )
+from backend.app.db import session_scope
+from backend.app.models.deploy import Deploy
+from backend.app.models.service import Service
 from backend.app.core.compose import (
     ComposeParseError,
     ParsedService,
@@ -25,6 +31,7 @@ from backend.app.core.builder import (
     cleanup_repository,
     clone_repository,
 )
+from backend.app.workers.tasks import enqueue_deploy_job
 
 router = APIRouter(prefix="/api/compose", tags=["compose"])
 
@@ -234,14 +241,124 @@ def _preview_repo_sync(payload: ComposeRepoPreviewRequest) -> ComposePreviewResp
         commit=payload.commit,
         compose_path=payload.compose_path,
     )
-    response = _preview_sync(
-        ComposePreviewRequest(
-            yaml=yaml_text,
-            name_prefix=payload.name_prefix,
+    parsed = parse_compose(yaml_text, allow_build=True)
+    services = [
+        ComposePreviewService(
+            name=_service_name_from_compose(payload.name_prefix, service.name),
+            image=service.image,
+            cpus=service.cpus,
+            memory_mb=service.memory_mb,
+            env_keys=sorted(service.env.keys()),
+            port_count=len(service.ports),
+            volume_count=len(service.volumes),
+            network=service.network,
+            restart_policy=service.restart_policy,
+            healthcheck=service.healthcheck is not None,
+            warnings=service.warnings,
         )
+        for service in parsed.services
+    ]
+    return ComposePreviewResponse(
+        services=services,
+        declared_volumes=parsed.declared_volumes,
+        declared_networks=parsed.declared_networks,
+        document_warnings=parsed.warnings,
+        compose_path=resolved_compose_path,
     )
-    response.compose_path = resolved_compose_path
-    return response
+
+
+def _create_git_service_from_compose_sync(
+    parsed: ParsedService,
+    name_prefix: str,
+    git_url: str,
+    branch: str | None,
+    commit: str | None,
+    current_user: User,
+) -> ComposeImportedService:
+    service_name = _service_name_from_compose(name_prefix, parsed.name)
+    service_slug = f"{_slugify(service_name)}-{str(current_user.id)[:8]}"
+    service_config = {
+        "name": service_name,
+        "image": parsed.image,
+        "cpus": parsed.cpus,
+        "memory_mb": parsed.memory_mb,
+        "env": {},
+        "ports": [
+            {"container_port": port.container_port, "host_port": port.host_port}
+            for port in parsed.ports
+        ],
+        "volumes": [
+            {"source": volume.source, "target": volume.target, "mode": volume.mode}
+            for volume in parsed.volumes
+        ],
+        "network": parsed.network,
+        "domain": None,
+        "healthcheck": parsed.healthcheck.__dict__ if parsed.healthcheck is not None else None,
+        "restart_policy": parsed.restart_policy,
+        "pids_limit": parsed.pids_limit,
+        "build": {
+            "context": parsed.build.context if parsed.build is not None else ".",
+            "dockerfile": parsed.build.dockerfile if parsed.build is not None else None,
+            "args": parsed.build.args if parsed.build is not None else {},
+        },
+        "git_source": {
+            "git_url": git_url,
+            "branch": branch,
+            "commit": commit,
+        },
+        "current_container_name": None,
+        "previous_image": None,
+        "last_successful_deploy_id": None,
+    }
+
+    with session_scope() as session:
+        project = _ensure_default_project(session, current_user)
+        service = Service(
+            name=service_name,
+            slug=service_slug,
+            image=parsed.image,
+            status="build_queued",
+            project_id=project.id,
+            config=service_config,
+        )
+        deploy = Deploy(
+            service_id=service.id,
+            status="queued",
+            source_type="git",
+            source_ref=git_url,
+        )
+        session.add(service)
+        session.add(deploy)
+        _record_audit_log(
+            session,
+            current_user,
+            "service.create",
+            service,
+            {"image": parsed.image, "compose_service": parsed.name, "project_id": str(project.id)},
+        )
+        session.commit()
+        session.refresh(service)
+        session.refresh(deploy)
+
+        enqueue_deploy_job(
+            deploy_id=deploy.id,
+            service_id=service.id,
+            git_url=git_url,
+            branch=branch,
+            commit=commit,
+            build_context_path=parsed.build.context if parsed.build is not None else ".",
+            dockerfile_path=parsed.build.dockerfile if parsed.build is not None else None,
+            build_args=parsed.build.args if parsed.build is not None else {},
+        )
+
+        return ComposeImportedService(
+            compose_name=parsed.name,
+            service_name=service.name,
+            service_id=service.id,
+            deploy_id=deploy.id,
+            image=service.image,
+            status=service.status,
+        )
 
 
 def _import_sync(payload: ComposeImportRequest, current_user: User) -> ComposeImportResponse:
@@ -300,16 +417,71 @@ def _import_repo_sync(payload: ComposeRepoImportRequest, current_user: User) -> 
         commit=payload.commit,
         compose_path=payload.compose_path,
     )
-    response = _import_sync(
-        ComposeImportRequest(
-            yaml=yaml_text,
-            name_prefix=payload.name_prefix,
-            only=payload.only,
-        ),
-        current_user,
+    parsed = parse_compose(yaml_text, allow_build=True)
+    selected: set[str] = set(payload.only or [])
+    imported: list[ComposeImportedService] = []
+    skipped: list[ComposeImportSkipped] = []
+
+    for service in parsed.services:
+        if selected and service.name not in selected:
+            skipped.append(
+                ComposeImportSkipped(
+                    compose_name=service.name,
+                    reason="Not in the requested 'only' list.",
+                )
+            )
+            continue
+
+        if service.build is not None:
+            try:
+                imported.append(
+                    _create_git_service_from_compose_sync(
+                        parsed=service,
+                        name_prefix=payload.name_prefix,
+                        git_url=payload.git_url,
+                        branch=payload.branch,
+                        commit=payload.commit,
+                        current_user=current_user,
+                    )
+                )
+            except HTTPException as exc:
+                skipped.append(
+                    ComposeImportSkipped(compose_name=service.name, reason=f"{exc.detail}")
+                )
+            continue
+
+        try:
+            create_request = _to_create_request(service, payload.name_prefix)
+        except Exception as exc:
+            skipped.append(
+                ComposeImportSkipped(compose_name=service.name, reason=f"Invalid service: {exc}")
+            )
+            continue
+        try:
+            response = _create_service_sync(create_request, current_user)
+        except HTTPException as exc:
+            skipped.append(
+                ComposeImportSkipped(compose_name=service.name, reason=f"{exc.detail}")
+            )
+            continue
+
+        imported.append(
+            ComposeImportedService(
+                compose_name=service.name,
+                service_name=create_request.name,
+                service_id=response.service_id,
+                deploy_id=response.deploy_id,
+                image=response.image,
+                status=response.status,
+            )
+        )
+
+    return ComposeImportResponse(
+        imported=imported,
+        skipped=skipped,
+        document_warnings=parsed.warnings,
+        compose_path=resolved_compose_path,
     )
-    response.compose_path = resolved_compose_path
-    return response
 
 
 @router.post("/preview", response_model=ComposePreviewResponse)

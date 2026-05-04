@@ -48,6 +48,7 @@ def enqueue_deploy_job(
     git_url: str,
     branch: str | None,
     commit: str | None,
+    build_context_path: str | None,
     dockerfile_path: str | None,
     build_args: dict[str, str],
 ) -> None:
@@ -58,6 +59,7 @@ def enqueue_deploy_job(
         git_url,
         branch,
         commit,
+        build_context_path,
         dockerfile_path,
         build_args,
     )
@@ -73,6 +75,7 @@ def _run_deploy_job(
     git_url: str,
     branch: str | None,
     commit: str | None,
+    build_context_path: str | None,
     dockerfile_path: str | None,
     build_args: dict[str, str],
 ) -> None:
@@ -95,6 +98,7 @@ def _run_deploy_job(
         _, build_output = build_image_from_repo(
             repo_path=repo_path,
             image_tag=image_tag,
+            build_context_path=build_context_path,
             dockerfile_path=dockerfile_path,
             build_args=build_args,
         )

@@ -43,6 +43,13 @@ class ParsedHealthcheck:
 
 
 @dataclass
+class ParsedBuild:
+    context: str = "."
+    dockerfile: str | None = None
+    args: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class ParsedService:
     name: str
     image: str
@@ -56,6 +63,7 @@ class ParsedService:
     restart_policy: str = "unless-stopped"
     pids_limit: int | None = 256
     healthcheck: ParsedHealthcheck | None = None
+    build: ParsedBuild | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -263,13 +271,42 @@ def _parse_healthcheck(raw: Any) -> ParsedHealthcheck | None:
     )
 
 
-def _parse_service(name: str, raw: dict[str, Any], declared_volumes: set[str]) -> ParsedService:
+def _parse_build(raw: Any) -> ParsedBuild | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return ParsedBuild(context=raw)
+    if not isinstance(raw, dict):
+        return None
+    context = raw.get("context")
+    dockerfile = raw.get("dockerfile")
+    build_args = raw.get("args")
+    if not isinstance(context, str) or not context.strip():
+        context = "."
+    if dockerfile is not None and not isinstance(dockerfile, str):
+        dockerfile = None
+    args: dict[str, str] = {}
+    if isinstance(build_args, dict):
+        args = {str(key): "" if value is None else str(value) for key, value in build_args.items()}
+    return ParsedBuild(context=context.strip(), dockerfile=dockerfile.strip() if isinstance(dockerfile, str) else None, args=args)
+
+
+def _parse_service(
+    name: str,
+    raw: dict[str, Any],
+    declared_volumes: set[str],
+    allow_build: bool,
+) -> ParsedService:
     warnings: list[str] = []
-    if "build" in raw and "image" not in raw:
+    build = _parse_build(raw.get("build"))
+    if build is not None and "image" not in raw and not allow_build:
         raise ComposeParseError(
             f"Service '{name}' uses a build directive. Compose import requires a prebuilt image."
         )
     image = raw.get("image")
+    if build is not None and (not isinstance(image, str) or not image.strip()):
+        image = f"build:{build.context}"
+        warnings.append(f"Service '{name}' will be built from the repository using context '{build.context}'.")
     if not isinstance(image, str) or not image.strip():
         raise ComposeParseError(f"Service '{name}' is missing an image.")
 
@@ -314,11 +351,12 @@ def _parse_service(name: str, raw: dict[str, Any], declared_volumes: set[str]) -
         restart_policy=_parse_restart(raw.get("restart")),
         pids_limit=int(raw["pids_limit"]) if isinstance(raw.get("pids_limit"), int) else 256,
         healthcheck=_parse_healthcheck(raw.get("healthcheck")),
+        build=build,
         warnings=warnings,
     )
 
 
-def parse_compose(yaml_text: str) -> ParsedCompose:
+def parse_compose(yaml_text: str, allow_build: bool = False) -> ParsedCompose:
     if not yaml_text or not yaml_text.strip():
         raise ComposeParseError("Compose document is empty.")
     try:
@@ -345,7 +383,7 @@ def parse_compose(yaml_text: str) -> ParsedCompose:
         if not isinstance(service_raw, dict):
             document_warnings.append(f"Service '{name}' is not a mapping; skipped.")
             continue
-        services.append(_parse_service(str(name), service_raw, declared_volumes))
+        services.append(_parse_service(str(name), service_raw, declared_volumes, allow_build))
 
     return ParsedCompose(
         services=services,
@@ -358,6 +396,7 @@ def parse_compose(yaml_text: str) -> ParsedCompose:
 __all__ = [
     "ComposeParseError",
     "ParsedCompose",
+    "ParsedBuild",
     "ParsedHealthcheck",
     "ParsedPort",
     "ParsedService",

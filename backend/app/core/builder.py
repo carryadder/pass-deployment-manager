@@ -50,15 +50,17 @@ def clone_repository(git_url: str, branch: str | None = None, commit: str | None
 def build_image_from_repo(
     repo_path: Path,
     image_tag: str,
+    build_context_path: str | None = None,
     dockerfile_path: str | None = None,
     build_args: dict[str, str] | None = None,
 ) -> tuple[str, list[str]]:
     client = get_docker_client()
     logs: list[str] = []
+    build_context = repo_path / build_context_path if build_context_path else repo_path
 
     try:
         image, build_logs = client.images.build(
-            path=str(repo_path),
+            path=str(build_context),
             tag=image_tag,
             dockerfile=dockerfile_path,
             buildargs=build_args or None,
