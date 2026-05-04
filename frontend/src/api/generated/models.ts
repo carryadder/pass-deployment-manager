@@ -360,10 +360,28 @@ export interface ComposePreviewResponse {
   declared_volumes: string[];
   declared_networks: string[];
   document_warnings: string[];
+  compose_path?: string | null;
 }
 
 export interface ComposeImportRequest {
   yaml: string;
+  name_prefix?: string;
+  only?: string[];
+}
+
+export interface ComposeRepoPreviewRequest {
+  git_url: string;
+  branch?: string | null;
+  commit?: string | null;
+  compose_path?: string | null;
+  name_prefix?: string;
+}
+
+export interface ComposeRepoImportRequest {
+  git_url: string;
+  branch?: string | null;
+  commit?: string | null;
+  compose_path?: string | null;
   name_prefix?: string;
   only?: string[];
 }
@@ -386,6 +404,7 @@ export interface ComposeImportResponse {
   imported: ComposeImportedService[];
   skipped: ComposeImportSkipped[];
   document_warnings: string[];
+  compose_path?: string | null;
 }
 
 export interface ProjectSummary {
